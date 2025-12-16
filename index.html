@@ -292,24 +292,6 @@
             justify-content: space-between;
             text-shadow: 0 0 5px var(--holo-color);
         }
-
-        #config-modal {
-            position: fixed; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 320px;
-            background: rgba(10, 15, 15, 0.95);
-            border: 1px solid var(--holo-color);
-            padding: 20px;
-            z-index: 1000;
-            display: none;
-            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
-        }
-        #config-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 999; display: none;
-            backdrop-filter: blur(5px);
-        }
-        .warning-text { color: #ff3333; font-size: 10px; margin-top: 5px; }
         
         /* Capture Canvas (Hidden) */
         #cap-canvas { display: none; }
@@ -345,7 +327,6 @@
     <!-- LEFT CONTROLS -->
     <div id="left-panel">
         <div class="hud-header">SYSTEM CONTROLS</div>
-        <button id="btn-config">⚠ SYSTEM CONFIG</button>
         <button id="btn-track">INIT HAND TRACKING</button>
         <button id="btn-scan">✨ VISION SCAN</button>
         <button id="btn-voice">VOICE: OFF</button>
@@ -389,7 +370,7 @@
     <div id="chat-panel">
         <div class="hud-header">COMMUNICATION LOG</div>
         <div id="chat-history">
-            <div class="message ai-msg">J.A.R.V.I.S. Core V3.3 Online. Connected to OpenRouter Neural Net.</div>
+            <div class="message ai-msg">J.A.R.V.I.S. Core V3.5 Online. Connected to OpenRouter.</div>
         </div>
     </div>
 
@@ -398,20 +379,10 @@
         <button id="btn-send">SEND</button>
     </div>
 
-    <!-- CONFIG MODAL -->
-    <div id="config-overlay"></div>
-    <div id="config-modal">
-        <div class="hud-header">SECURITY PROTOCOLS</div>
-        <div style="font-size:11px; margin-bottom:15px; color:#aaa;">AUTHENTICATION REQUIRED FOR NEURAL LINK</div>
-        <input type="password" id="api-key-input" placeholder="ENTER API KEY (sk-or-v1...)" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
-        <div class="warning-text">Key is stored locally in browser storage.</div>
-        <div style="display:flex; gap:10px; margin-top:20px;">
-            <button id="btn-save-key" style="flex:1;">AUTHENTICATE</button>
-            <button id="btn-close-key" style="flex:1; background:transparent; border-color:#555; color:#555;">CANCEL</button>
-        </div>
-    </div>
-
     <script>
+        // GLOBAL API KEY (Hardcoded)
+        const API_KEY = "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";
+
         /**
          * ------------------------------------------------------------------
          * GEMINI LLM CORE (Via OpenRouter)
@@ -421,7 +392,11 @@
         const GeminiCore = {
             // Endpoints (OpenRouter for Google Models)
             endpoint: "https://openrouter.ai/api/v1/chat/completions",
-            model: "google/gemini-2.0-flash-001",
+            // MODEL FALLBACK SYSTEM
+            models: [
+                "google/gemini-2.0-flash-001", // Primary (Fastest)
+                "google/gemini-flash-1.5"      // Backup (Stable)
+            ],
             
             // System Prompt
             systemInstruction: `You are J.A.R.V.I.S., a highly advanced AI interface.
@@ -436,20 +411,17 @@
             Example: "I have engaged the security protocols, Sir. [JSON] { "action": "SET_MODE", "value": "ALERT" }"
             `,
 
-            async sendText(text, apiKey) {
-                const payload = {
-                    model: this.model,
+            async sendText(text) {
+                return this.tryFetch({
                     messages: [
                         { role: "system", content: this.systemInstruction },
                         { role: "user", content: text + "\n\n(Remember to append JSON command if applicable)" }
                     ]
-                };
-                return this.fetchGemini(payload, apiKey);
+                });
             },
 
-            async sendImage(base64Image, prompt, apiKey) {
-                const payload = {
-                    model: this.model,
+            async sendImage(base64Image, prompt) {
+                return this.tryFetch({
                     messages: [
                         { role: "system", content: this.systemInstruction },
                         { 
@@ -460,37 +432,47 @@
                             ] 
                         }
                     ]
-                };
-                return this.fetchGemini(payload, apiKey);
+                });
             },
 
-            async fetchGemini(payload, apiKey) {
+            // Auto-Switch Models on 429/Error
+            async tryFetch(payloadBase, modelIndex = 0) {
+                if (modelIndex >= this.models.length) {
+                    throw new Error("All neural pathways unavailable (Rate Limited).");
+                }
+
+                const currentModel = this.models[modelIndex];
+                const payload = { ...payloadBase, model: currentModel };
+
                 try {
                     const response = await fetch(this.endpoint, {
                         method: 'POST',
                         headers: { 
-                            'Authorization': `Bearer ${apiKey}`,
+                            'Authorization': `Bearer ${API_KEY}`,
                             'Content-Type': 'application/json',
-                            'HTTP-Referer': window.location.href,
+                            'HTTP-Referer': 'https://jarvis-ui.com', 
                             'X-Title': 'Jarvis AI'
                         },
                         body: JSON.stringify(payload)
                     });
                     
                     if (!response.ok) {
-                        // HANDLE 401 AUTH ERROR
-                        if (response.status === 401) {
-                            localStorage.removeItem('jarvis_api_key'); 
-                            apiKey = DEFAULT_KEY; // Self-heal: Switch back to hardcoded key immediately
-                            throw new Error("Authentication Failed (401). Retrying on next command with default protocols.");
+                        // Rate Limit or Auth Error? Switch model
+                        if (response.status === 429 || response.status === 503) {
+                            console.warn(`Model ${currentModel} failed. Switching...`);
+                            return this.tryFetch(payloadBase, modelIndex + 1);
                         }
-                        throw new Error(`API Error: ${response.status}`);
+                        throw new Error(`API Error: ${response.status} ${response.statusText}`);
                     }
                     
                     const data = await response.json();
                     if (data.error) throw new Error(data.error.message);
                     return data.choices[0].message.content;
                 } catch (e) {
+                    // Recursive retry for network errors
+                    if (modelIndex < this.models.length - 1) {
+                        return this.tryFetch(payloadBase, modelIndex + 1);
+                    }
                     console.error("Gemini Error:", e);
                     throw e;
                 }
@@ -498,7 +480,6 @@
 
             // Parse response for Hidden JSON Commands to control HUD
             executeCommands(response) {
-                // Regex to find JSON block at end of string
                 const jsonMatch = response.match(/\{[\s\S]*\}$/);
                 if (jsonMatch) {
                     try {
@@ -508,7 +489,6 @@
                         if (command.action === "SET_MODE") HoloCore.setMode(command.value);
                         if (command.action === "SET_COLOR") HoloCore.updateTheme(command.value, 100, 50);
                         
-                        // Return text without the JSON
                         return response.replace(jsonMatch[0], '').trim();
                     } catch (e) {
                         return response;
@@ -529,19 +509,15 @@
             lastX: 0, lastY: 0, lastAngle: 0,
             
             detect: function(x, y, scale, label, numHands) {
-                // 1. Analyze Motion (Velocity & Angle)
                 const dx = x - this.lastX;
                 const dy = y - this.lastY;
                 const speed = Math.sqrt(dx*dx + dy*dy);
                 
-                // Track History for Shake/Wave
                 if (this.history.length > 5) this.history.shift();
                 this.history.push({dx, dy, speed});
 
-                // Calculate Angular Change (For Rotation Gestures)
                 const angle = Math.atan2(y, x);
                 let dAngle = angle - this.lastAngle;
-                // Fix angle wrap-around (PI to -PI jump)
                 if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
                 if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
 
@@ -549,33 +525,26 @@
                 this.lastY = y;
                 this.lastAngle = angle;
 
-                // 2. Spatial Zones (Coordinates are -1 to 1)
                 const isTop = y < -0.3;
                 const isBottom = y > 0.3;
                 const isLeft = x < -0.3;
                 const isRight = x > 0.3;
                 
-                // 3. Multi-Hand Logic
                 if (numHands > 1) {
-                    if (label === 'closed') return 'DOUBLE_CLOSED'; // Stealth
-                    return 'DOUBLE_OPEN'; // Expand Max
+                    if (label === 'closed') return 'DOUBLE_CLOSED';
+                    return 'DOUBLE_OPEN';
                 }
 
-                // 4. Basic State Overrides
-                if (label === 'closed') return 'GRAB_CENTER'; // FIST DETECTED
+                if (label === 'closed') return 'GRAB_CENTER';
                 if (label === 'pinch') return 'PINCH_CENTER';
                 if (label === 'point') return 'POINT_CENTER';
 
-                // 5. Rotation Logic (Open Hand, Away from center)
                 const radius = Math.sqrt(x*x + y*y);
                 if (radius > 0.2 && speed > 0.05) {
-                    // Threshold for circular motion vs random jitter
                     if (dAngle > 0.15) return 'CLOCKWISE';
                     if (dAngle < -0.15) return 'ANTICLOCKWISE';
                 }
 
-                // 6. Shake / Wave Logic (Direction reversals)
-                // Check if dx direction flipped multiple times in history with high speed
                 let reversals = 0;
                 let highSpeed = 0;
                 for(let i=1; i<this.history.length; i++) {
@@ -583,39 +552,23 @@
                     if (this.history[i].speed > 0.1) highSpeed++;
                 }
                 
-                if (reversals >= 2 && highSpeed >= 3) {
-                    // If moving mostly horizontally, it's a WAVE, else SHAKE
-                    return 'SHAKE';
-                }
-                
-                // Sustained low frequency oscillation = WAVE (simulated here as simple shake variation)
-                if (reversals >= 1 && speed > 0.08 && speed < 0.2) {
-                    return 'WAVE';
-                }
+                if (reversals >= 2 && highSpeed >= 3) return 'SHAKE';
+                if (reversals >= 1 && speed > 0.08 && speed < 0.2) return 'WAVE';
 
-                // 7. Motion Gestures (Linear Swipes)
                 if (speed > 0.15) {
-                    if (Math.abs(dx) > Math.abs(dy)) {
-                        return dx > 0 ? 'SWIPE_RIGHT' : 'SWIPE_LEFT';
-                    } else {
-                        return dy > 0 ? 'SWIPE_DOWN' : 'SWIPE_UP';
-                    }
+                    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'SWIPE_RIGHT' : 'SWIPE_LEFT';
+                    else return dy > 0 ? 'SWIPE_DOWN' : 'SWIPE_UP';
                 }
                 
-                // 8. Push/Pull (Scale based)
-                if (scale > 2.5) return 'PUSH'; // Very close
-                if (scale < 0.6) return 'PULL'; // Far away
-
-                // 9. Freeze (Low movement)
+                if (scale > 2.5) return 'PUSH';
+                if (scale < 0.6) return 'PULL';
                 if (speed < 0.002) return 'FREEZE';
 
-                // 10. Zone Gestures (Corners)
                 if (isTop && isLeft) return 'ZONE_TL';
                 if (isTop && isRight) return 'ZONE_TR';
                 if (isBottom && isLeft) return 'ZONE_BL';
                 if (isBottom && isRight) return 'ZONE_BR';
 
-                // 11. Default
                 return 'HOVER_CENTER';
             }
         };
@@ -633,14 +586,10 @@
                 baseHue: 170
             },
             state: {
-                mode: 'IDLE', // IDLE, LISTENING, THINKING, ALERT
+                mode: 'IDLE',
                 target: { x: 0, y: 0, scale: 1, explode: 0 },
                 current: { x: 0, y: 0, scale: 1, explode: 0 },
-                velocity: 0,
-                breath: 0,
-                handVisible: false,
-                gesture: 'NONE',
-                sizeMod: 0 // PERSISTENT SIZE MODIFIER
+                velocity: 0, breath: 0, handVisible: false, gesture: 'NONE', sizeMod: 0
             },
             ui: {
                 root: document.documentElement,
@@ -652,33 +601,23 @@
             setMode(mode) {
                 this.state.mode = mode;
                 this.ui.status.innerText = mode;
-
                 switch(mode) {
-                    case 'ALERT': this.updateTheme(0, 100, 50); break; // Red
-                    case 'THINKING': this.updateTheme(270, 100, 60); break; // Purple
-                    case 'LISTENING': this.updateTheme(270, 100, 60); break; // Purple
-                    case 'IDLE':
-                    default: this.updateTheme(170, 100, 50); // Cyan
+                    case 'ALERT': this.updateTheme(0, 100, 50); break;
+                    case 'THINKING': this.updateTheme(270, 100, 60); break;
+                    case 'LISTENING': this.updateTheme(270, 100, 60); break;
+                    case 'IDLE': default: this.updateTheme(170, 100, 50);
                 }
             },
 
-            /**
-             * Advanced Input Handler with 20 Gestures
-             */
             updateInput(x, y, scale = 1, hasHand = false, label = 'open', numHands = 1) {
                 const s = this.state;
                 s.handVisible = hasHand;
-
                 if (hasHand) {
-                    // Determine Gesture using Engine
                     const detectedGesture = GestureEngine.detect(x, y, scale, label, numHands);
                     s.gesture = detectedGesture;
                     this.ui.gesture.innerText = detectedGesture;
-
-                    // Apply Visual Logic based on Gesture
                     this.applyGesturePhysics(detectedGesture, x, y, scale);
                 } else {
-                    // Reset if hand lost
                     this.resetPhysics();
                     this.ui.gesture.innerText = "SEARCHING...";
                 }
@@ -689,81 +628,34 @@
                 const t = s.target;
                 const wrapper = this.ui.wrapper;
                 
-                // Clear previous classes
                 wrapper.classList.remove('gesture-grabbed', 'gesture-pinch', 'gesture-point', 'gesture-shake', 'gesture-freeze');
 
-                // DEFAULT TRACKING
                 if (Math.abs(x - t.x) > this.config.deadZone) t.x = x;
                 if (Math.abs(y - t.y) > this.config.deadZone) t.y = y;
-                
                 t.explode = 0;
 
-                // SPECIAL STATES
                 switch(gesture) {
-                    case 'GRAB_CENTER': // Fist -> Shrink
-                        wrapper.classList.add('gesture-grabbed');
-                        t.scale = 0.3; 
-                        break;
-                    case 'CLOCKWISE': // Rotate CW -> Enlarge Persistently
-                        s.sizeMod += 0.02;
-                        if(s.sizeMod > 2.0) s.sizeMod = 2.0;
-                        t.scale = scale + s.sizeMod;
-                        break;
-                    case 'ANTICLOCKWISE': // Rotate CCW -> Reduce Persistently
-                        s.sizeMod -= 0.02;
-                        if(s.sizeMod < -0.5) s.sizeMod = -0.5;
-                        t.scale = scale + s.sizeMod;
-                        break;
-                    case 'PINCH_CENTER':
-                        t.explode = 150; // Boom
-                        wrapper.classList.add('gesture-pinch');
-                        break;
-                    case 'POINT_CENTER':
-                        wrapper.classList.add('gesture-point');
-                        break;
-                    case 'FREEZE':
-                        wrapper.classList.add('gesture-freeze');
-                        break;
-                    case 'SHAKE':
-                        wrapper.classList.add('gesture-shake');
-                        break;
-                    case 'WAVE':
-                        // Rainbow cycle for wave
-                        this.updateTheme((Date.now() / 10) % 360, 100, 60);
-                        break;
-                    case 'PUSH':
-                        t.scale = 3.0; // Zoom
-                        break;
-                    case 'PULL':
-                        t.scale = 0.5; // Shrink
-                        break;
-                    case 'SWIPE_LEFT':
-                        t.x = -2; // Spin hard left
-                        break;
-                    case 'SWIPE_RIGHT':
-                        t.x = 2; // Spin hard right
-                        break;
-                    case 'SWIPE_UP':
-                        t.y = -2; // Spin hard up
-                        break;
-                    case 'SWIPE_DOWN':
-                        t.y = 2; // Spin hard down
-                        break;
-                    case 'DOUBLE_OPEN':
-                        t.scale = 2.0;
-                        t.explode = 50;
-                        break;
-                    case 'DOUBLE_CLOSED':
-                        t.scale = 0; // Hide
-                        break;
+                    case 'GRAB_CENTER': wrapper.classList.add('gesture-grabbed'); t.scale = 0.3; break;
+                    case 'CLOCKWISE': s.sizeMod += 0.02; if(s.sizeMod > 2.0) s.sizeMod = 2.0; t.scale = scale + s.sizeMod; break;
+                    case 'ANTICLOCKWISE': s.sizeMod -= 0.02; if(s.sizeMod < -0.5) s.sizeMod = -0.5; t.scale = scale + s.sizeMod; break;
+                    case 'PINCH_CENTER': t.explode = 150; wrapper.classList.add('gesture-pinch'); break;
+                    case 'POINT_CENTER': wrapper.classList.add('gesture-point'); break;
+                    case 'FREEZE': wrapper.classList.add('gesture-freeze'); break;
+                    case 'SHAKE': wrapper.classList.add('gesture-shake'); break;
+                    case 'WAVE': this.updateTheme((Date.now() / 10) % 360, 100, 60); break;
+                    case 'PUSH': t.scale = 3.0; break;
+                    case 'PULL': t.scale = 0.5; break;
+                    case 'SWIPE_LEFT': t.x = -2; break;
+                    case 'SWIPE_RIGHT': t.x = 2; break;
+                    case 'SWIPE_UP': t.y = -2; break;
+                    case 'SWIPE_DOWN': t.y = 2; break;
+                    case 'DOUBLE_OPEN': t.scale = 2.0; t.explode = 50; break;
+                    case 'DOUBLE_CLOSED': t.scale = 0; break;
                     case 'ZONE_TL': t.x = -0.8; t.y = -0.8; break;
                     case 'ZONE_TR': t.x = 0.8; t.y = -0.8; break;
                     case 'ZONE_BL': t.x = -0.8; t.y = 0.8; break;
                     case 'ZONE_BR': t.x = 0.8; t.y = 0.8; break;
-                    case 'HOVER_CENTER':
-                        // Combine hand depth (scale) with persistent rotation modifier (sizeMod)
-                        t.scale = scale + s.sizeMod;
-                        break;
+                    case 'HOVER_CENTER': t.scale = scale + s.sizeMod; break;
                 }
             },
 
@@ -777,20 +669,16 @@
                 const c = s.current;
                 const t = s.target;
                 
-                // Dynamic Lerp: Faster if grabbing/swiping
                 let f = (s.gesture.includes('SWIPE') || s.gesture.includes('GRAB')) ? 0.2 : this.config.lerpFactor;
 
-                // 1. PHYSICS INTERPOLATION
                 if (s.handVisible) {
                     c.x += (t.x - c.x) * f;
                     c.y += (t.y - c.y) * f;
                     c.scale += (t.scale - c.scale) * f;
                     c.explode += (t.explode - c.explode) * 0.1;
-                    
                     const dx = t.x - c.x; const dy = t.y - c.y;
                     s.velocity = Math.sqrt(dx*dx + dy*dy) * 100;
                 } else {
-                    // Idle Animation (Auto-Drift)
                     c.x += Math.sin(Date.now() * 0.001) * 0.002;
                     c.y += Math.cos(Date.now() * 0.0015) * 0.002;
                     c.scale += (1 - c.scale) * 0.05;
@@ -798,24 +686,17 @@
                     s.velocity *= 0.95;
                 }
 
-                // 2. BREATHING / PULSE
                 s.breath += deltaTime * 0.002;
                 let breathVal = 1 + Math.sin(s.breath) * 0.05;
                 if (s.mode !== 'IDLE') breathVal = 1 + Math.sin(s.breath * 5) * 0.1;
 
-                // 3. COLOR REACTIVITY
                 if (s.mode === 'IDLE') {
-                    if (s.gesture === 'GRAB_CENTER') {
-                        this.ui.root.style.setProperty('--base-h', 30); // Orange
-                    } else if (s.gesture === 'POINT_CENTER') {
-                        this.ui.root.style.setProperty('--base-h', 120); // Green
-                    } else if (s.gesture === 'PINCH_CENTER') {
-                        this.ui.root.style.setProperty('--base-h', 280); // Purple
-                    } else if (s.gesture === 'SHAKE') {
-                        // Keep shake color dynamic if needed, or default
-                    } else if (s.gesture === 'WAVE') {
-                        // Handled in applyPhysics
-                    } else if (s.velocity > 5) {
+                    if (s.gesture === 'GRAB_CENTER') this.ui.root.style.setProperty('--base-h', 30);
+                    else if (s.gesture === 'POINT_CENTER') this.ui.root.style.setProperty('--base-h', 120);
+                    else if (s.gesture === 'PINCH_CENTER') this.ui.root.style.setProperty('--base-h', 280);
+                    else if (s.gesture === 'SHAKE') {}
+                    else if (s.gesture === 'WAVE') {}
+                    else if (s.velocity > 5) {
                         const shift = Math.min(s.velocity * 3, 60);
                         this.ui.root.style.setProperty('--base-h', this.config.baseHue + shift);
                     } else {
@@ -826,8 +707,7 @@
                     }
                 }
 
-                // 4. GPU UPDATE
-                this.ui.root.style.setProperty('--ry', `${c.x * 60}deg`); // Increased range
+                this.ui.root.style.setProperty('--ry', `${c.x * 60}deg`);
                 this.ui.root.style.setProperty('--rx', `${c.y * -60}deg`);
                 this.ui.root.style.setProperty('--scale', c.scale);
                 this.ui.root.style.setProperty('--breath', breathVal);
@@ -929,37 +809,6 @@
         const securityBtn = document.getElementById('btn-security');
         let isSecurityMode = false;
 
-        // --- CONFIG / API KEY MANAGEMENT ---
-        const configModal = document.getElementById('config-modal');
-        const configOverlay = document.getElementById('config-overlay');
-        const apiKeyInput = document.getElementById('api-key-input');
-        
-        // --- API KEY: Hardcoded Default per instructions ---
-        const DEFAULT_KEY = "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";
-        let apiKey = localStorage.getItem('jarvis_api_key') || DEFAULT_KEY;
-
-        if(apiKey) document.getElementById('btn-config').style.borderColor = 'var(--holo-color)';
-
-        document.getElementById('btn-config').addEventListener('click', () => {
-            configModal.style.display = 'block';
-            configOverlay.style.display = 'block';
-            apiKeyInput.value = apiKey;
-        });
-
-        document.getElementById('btn-close-key').addEventListener('click', () => {
-            configModal.style.display = 'none';
-            configOverlay.style.display = 'none';
-        });
-
-        document.getElementById('btn-save-key').addEventListener('click', () => {
-            apiKey = apiKeyInput.value.trim();
-            localStorage.setItem('jarvis_api_key', apiKey);
-            configModal.style.display = 'none';
-            configOverlay.style.display = 'none';
-            addMessage('AI', 'Identity confirmed. API Key updated.');
-            document.getElementById('btn-config').innerText = "SYSTEM CONFIG";
-        });
-
         // --- VOICE TOGGLE ---
         let isVoiceEnabled = false;
         document.getElementById('btn-voice').addEventListener('click', (e) => {
@@ -974,19 +823,12 @@
         const capCtx = capCanvas.getContext('2d');
 
         scanBtn.addEventListener('click', async () => {
-            if (!apiKey) {
-                addMessage('AI', '⚠ AUTH ERROR. Please configure API Key.');
-                return;
-            }
-            
             addMessage('USER', '[INITIATING VISUAL SCAN...]');
             HoloCore.setMode('THINKING');
             
-            // Capture Frame
             capCanvas.width = video.videoWidth || 640;
             capCanvas.height = video.videoHeight || 480;
             
-            // If video is not active/playing, this might be blank
             if(video.readyState === video.HAVE_ENOUGH_DATA) {
                 capCtx.drawImage(video, 0, 0);
             } else {
@@ -998,7 +840,7 @@
             const base64 = capCanvas.toDataURL('image/jpeg').split(',')[1];
             
             try {
-                const response = await GeminiCore.sendImage(base64, "Analyze this image. Identify key objects, people, and assess any potential security threats. Keep it concise.", apiKey);
+                const response = await GeminiCore.sendImage(base64, "Analyze this image. Identify key objects, people, and assess any potential security threats. Keep it concise.");
                 const text = GeminiCore.executeCommands(response);
                 addMessage('AI', text);
                 speakResponse(text);
@@ -1029,13 +871,6 @@
             const text = userInput.value.trim();
             if (!text) return;
             
-            if (!apiKey) {
-                addMessage('AI', '⚠ ACCESS DENIED. Please configure API Key in System Controls.');
-                configModal.style.display = 'block';
-                configOverlay.style.display = 'block';
-                return;
-            }
-
             addMessage('USER', text);
             userInput.value = '';
             
@@ -1043,7 +878,7 @@
             sendBtn.disabled = true;
             
             try {
-                const rawResponse = await GeminiCore.sendText(text, apiKey);
+                const rawResponse = await GeminiCore.sendText(text);
                 const finalResponse = GeminiCore.executeCommands(rawResponse);
                 
                 addMessage('AI', finalResponse);
@@ -1051,7 +886,11 @@
 
             } catch (err) {
                 console.error(err);
-                addMessage('AI', "Unable to reach servers. Switching to offline protocols.");
+                addMessage('AI', `Server Error: ${err.message}`);
+                // If Rate Limited, warn user
+                if (err.message.includes('429')) {
+                    addMessage('AI', "⚠ Neural Net Overloaded. Rerouting to backup servers...");
+                }
             }
             
             if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');

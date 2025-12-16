@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. AI // Gemini Integrated</title>
+    
+    <!-- AI & Vision Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/handtrackjs/dist/handtrack.min.js"></script>
+
+    <style>
+        /* --- 1. CORE VARIABLES & THEME --- */
+        :root {
+            /* Hologram Physics State (Driven by JS) */
+            --rx: 0deg;
+            --ry: 0deg;
+            --scale: 1;
+            --breath: 1;
+            --explode: 0; /* New: For expanding geometry */
+
+            /* Dynamic Color Theme */
+            --base-h: 180;  /* Cyan Base */
+            --base-s: 100%;
+            --base-l: 50%;
+            --holo-color: hsla(var(--base-h), var(--base-s), var(--base-l), 0.8);
+            
+            --bg-dark: #050505;
+            --panel-bg: rgba(10, 15, 15, 0.85);
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Courier New', monospace;
+            background-color: var(--bg-dark);
+            color: var(--holo-color);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            
+            /* Sci-Fi Grid Background */
+            background-image: 
+                linear-gradient(rgba(0, 255, 204, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 204, 0.03) 1px, transparent 1px),
+                radial-gradient(circle at 50% 50%, rgba(0, 20, 20, 1) 0%, rgba(5, 5, 5, 1) 80%);
+            background-size: 40px 40px, 40px 40px, 100% 100%;
+        }
+
+        /* --- 2. HOLOGRAM STAGE (Optimized GPU Layer) --- */
+        #stage-container {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1200px;
+        }
+
+        .holo-wrapper {
+            position: relative;
+            width: 500px; height: 500px;
+            transform-style: preserve-3d;
+            
+            /* PHYSICS LINK: Driven by HoloCore */
+            transform: 
+                rotateX(var(--rx)) 
+                rotateY(var(--ry)) 
+                scale(var(--scale));
+            
+            will-change: transform;
+            transition: filter 0.2s ease;
+        }
+
+        /* --- ADVANCED GEOMETRY --- */
+        .ring {
+            position: absolute;
+            top: 50%; left: 50%;
+            border-radius: 50%;
+            transform: translate(-50%, -50%) translateZ(calc(var(--explode) * 1px));
+            box-shadow: 0 0 15px var(--holo-color), inset 0 0 10px var(--holo-color);
+            transition: border-color 0.2s, box-shadow 0.2s;
+            transform-style: preserve-3d;
+        }
+
+        /* Main Outer Ring */
+        .ring-outer {
+            width: 450px; height: 450px;
+            border: 1px solid rgba(0, 255, 204, 0.1);
+            border-top: 4px solid var(--holo-color);
+            border-bottom: 4px solid var(--holo-color);
+            animation: spin 30s linear infinite;
+        }
+
+        /* Mid Data Ring (Counter-rotating) */
+        .ring-mid {
+            width: 380px; height: 380px;
+            border: 1px dotted rgba(255, 255, 255, 0.3);
+            border-left: 2px solid var(--holo-color);
+            border-right: 2px solid var(--holo-color);
+            animation: spin-rev 20s linear infinite;
+            /* Explodes further out */
+            transform: translate(-50%, -50%) translateZ(calc(var(--explode) * 2px)) rotateX(45deg);
+        }
+
+        /* Inner Precise Ring */
+        .ring-inner {
+            width: 250px; height: 250px;
+            border: 2px dashed rgba(0, 255, 204, 0.4);
+            animation: spin 10s linear infinite;
+            transform: translate(-50%, -50%) rotateX(90deg);
+        }
+
+        /* Scanning Laser Effect */
+        .scan-line {
+            position: absolute;
+            top: 0; left: 10%; right: 10%;
+            height: 2px;
+            background: var(--holo-color);
+            box-shadow: 0 0 20px var(--holo-color);
+            animation: scan 3s ease-in-out infinite;
+            opacity: 0.7;
+            transform: translateZ(calc(var(--explode) * 0.5px));
+        }
+
+        .core-cube {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 80px; height: 80px;
+            transform-style: preserve-3d;
+            transform: translate(-50%, -50%) scale(var(--breath)) rotateX(45deg) rotateY(45deg);
+            will-change: transform;
+        }
+
+        .face {
+            position: absolute;
+            width: 80px; height: 80px;
+            border: 2px solid var(--holo-color);
+            background: rgba(0, 255, 204, 0.1);
+            box-shadow: inset 0 0 20px rgba(0, 255, 204, 0.2);
+            backface-visibility: visible; 
+        }
+
+        /* Gestural States Visuals */
+        .gesture-grabbed .ring { border-color: #ffaa00; box-shadow: 0 0 30px #ffaa00; }
+        .gesture-grabbed .face { border-color: #ffaa00; background: rgba(255, 170, 0, 0.3); }
+        
+        .gesture-pinch .ring { border-style: dotted; }
+        .gesture-pinch .holo-wrapper { filter: hue-rotate(90deg); } /* Purple shift */
+        
+        .gesture-point .holo-wrapper { filter: hue-rotate(-60deg) brightness(1.5); } /* Green shift */
+        .gesture-shake .holo-wrapper { animation: glitch 0.2s infinite; }
+        .gesture-freeze .holo-wrapper * { animation-play-state: paused !important; filter: grayscale(1); }
+
+        @keyframes glitch {
+            0% { transform: skewX(10deg); }
+            50% { transform: skewX(-10deg); }
+            100% { transform: skewX(10deg); }
+        }
+
+        .f-front  { transform: translateZ(40px); }
+        .f-back   { transform: rotateY(180deg) translateZ(40px); }
+        .f-right  { transform: rotateY(90deg) translateZ(40px); }
+        .f-left   { transform: rotateY(-90deg) translateZ(40px); }
+        .f-top    { transform: rotateX(90deg) translateZ(40px); }
+        .f-bottom { transform: rotateX(-90deg) translateZ(40px); }
+
+        /* --- 3. UI LAYOUT --- */
+        #left-panel {
+            position: fixed;
+            top: 20px; left: 20px;
+            width: 250px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        #chat-panel {
+            position: fixed;
+            top: 20px; right: 20px; bottom: 100px;
+            width: 350px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--holo-color) transparent;
+            mask-image: linear-gradient(to bottom, transparent, black 10%);
+        }
+
+        .message {
+            background: rgba(0, 20, 20, 0.6);
+            border-left: 2px solid var(--holo-color);
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            line-height: 1.4;
+            animation: fadeIn 0.3s ease;
+            backdrop-filter: blur(4px);
+        }
+        .user-msg { border-color: #fff; text-align: right; background: rgba(50, 50, 50, 0.4); }
+        .ai-msg { border-color: var(--holo-color); }
+
+        #input-area {
+            position: fixed;
+            bottom: 20px; right: 20px;
+            width: 350px;
+            z-index: 20;
+            display: flex;
+            gap: 5px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid var(--holo-color);
+            color: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            outline: none;
+            letter-spacing: 1px;
+        }
+
+        button {
+            background: rgba(0, 20, 20, 0.9);
+            border: 1px solid var(--holo-color);
+            color: var(--holo-color);
+            padding: 8px 12px;
+            text-transform: uppercase;
+            font-size: 11px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+        }
+        button:hover { background: var(--holo-color); color: #000; }
+        button.active { background: var(--holo-color); color: #000; box-shadow: 0 0 15px var(--holo-color); }
+
+        /* Special Gemini Buttons */
+        #btn-scan {
+            border-color: #4db8ff; color: #4db8ff;
+        }
+        #btn-scan:hover { background: #4db8ff; color: #000; }
+
+        /* Dropdown Style */
+        select.hud-select {
+            width: 100%;
+            background: rgba(0, 15, 15, 0.9);
+            color: var(--holo-color);
+            border: 1px solid var(--holo-color);
+            padding: 8px;
+            font-family: inherit;
+            font-size: 11px;
+            text-transform: uppercase;
+            outline: none;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+        select.hud-select option {
+            background: #000;
+            color: var(--holo-color);
+            padding: 5px;
+        }
+
+        #matrix-canvas {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.1; z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes spin { from { transform: translate(-50%, -50%) rotateZ(0deg); } to { transform: translate(-50%, -50%) rotateZ(360deg); } }
+        @keyframes spin-rev { from { transform: translate(-50%, -50%) rotateZ(360deg); } to { transform: translate(-50%, -50%) rotateZ(0deg); } }
+        @keyframes scan { 0% { top: 10%; opacity: 0; } 50% { opacity: 1; } 100% { top: 90%; opacity: 0; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        #video { display: none; }
+        
+        .hud-header {
+            border-bottom: 1px solid var(--holo-color);
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            text-shadow: 0 0 5px var(--holo-color);
+        }
+
+        #config-modal {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 320px;
+            background: rgba(10, 15, 15, 0.95);
+            border: 1px solid var(--holo-color);
+            padding: 20px;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+        }
+        #config-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 999; display: none;
+            backdrop-filter: blur(5px);
+        }
+        .warning-text { color: #ff3333; font-size: 10px; margin-top: 5px; }
+        
+        /* Capture Canvas (Hidden) */
+        #cap-canvas { display: none; }
+    </style>
+</head>
+<body>
+
+    <video id="video"></video>
+    <canvas id="matrix-canvas"></canvas>
+    <canvas id="cap-canvas"></canvas>
+
+    <!-- 3D HOLOGRAM STAGE -->
+    <div id="stage-container">
+        <div class="holo-wrapper" id="holo-wrapper">
+            <!-- Layers of Geometry -->
+            <div class="ring ring-outer"></div>
+            <div class="ring ring-mid"></div>
+            <div class="ring ring-inner"></div>
+            <div class="scan-line"></div>
+            
+            <!-- Core -->
+            <div class="core-cube">
+                <div class="face f-front"></div>
+                <div class="face f-back"></div>
+                <div class="face f-right"></div>
+                <div class="face f-left"></div>
+                <div class="face f-top"></div>
+                <div class="face f-bottom"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LEFT CONTROLS -->
+    <div id="left-panel">
+        <div class="hud-header">SYSTEM CONTROLS</div>
+        <button id="btn-config">⚠ SYSTEM CONFIG</button>
+        <button id="btn-track">INIT HAND TRACKING</button>
+        <button id="btn-scan">✨ VISION SCAN</button>
+        <button id="btn-voice">VOICE: OFF</button>
+        <button id="btn-security">SECURITY: OFF</button>
+        <button id="btn-matrix">MATRIX: ON</button>
+        
+        <!-- GESTURE REFERENCE LIST (INFO ONLY) -->
+        <select id="gesture-list" class="hud-select" onchange="this.selectedIndex=0; this.blur();">
+            <option value="" disabled selected>▼ VIEW GESTURE COMMANDS ▼</option>
+            <option disabled>--- HAND STATES ---</option>
+            <option>🖐 OPEN HAND: Move/Zoom/Rotate</option>
+            <option>✊ FIST: Shrink & Grab (Orange)</option>
+            <option>👌 PINCH: Explode View (Purple)</option>
+            <option>☝ POINT: Target Lock (Green)</option>
+            <option disabled>--- MOTION GESTURES ---</option>
+            <option>↻ ROTATE CW: Enlarge Size</option>
+            <option>↺ ROTATE CCW: Reduce Size</option>
+            <option>⬅ SWIPE LEFT: Spin Left</option>
+            <option>➡ SWIPE RIGHT: Spin Right</option>
+            <option>⬆ SWIPE UP: Spin Up</option>
+            <option>⬇ SWIPE DOWN: Spin Down</option>
+            <option>💨 PUSH: Rapid Zoom In</option>
+            <option>👋 PULL: Rapid Zoom Out</option>
+            <option>🔲 CORNERS: Zone Lock</option>
+            <option>⚡ SHAKE: System Glitch</option>
+            <option>🌊 WAVE: Rainbow Pulse</option>
+            <option disabled>--- MULTI-HAND ---</option>
+            <option>👐 2 HANDS OPEN: Maximize</option>
+            <option>👊 2 HANDS FIST: Stealth Mode</option>
+            <option>❄ FREEZE: Stop Physics</option>
+        </select>
+
+        <div style="font-size: 10px; margin-top:10px; color:#777;">
+            CORE STATUS: <span id="status-text" style="color:var(--holo-color)">ONLINE</span><br>
+            GESTURE: <span id="gesture-text" style="color:#fff">NONE</span><br>
+            FPS: <span id="fps-counter">60</span>
+        </div>
+    </div>
+
+    <!-- RIGHT CHAT -->
+    <div id="chat-panel">
+        <div class="hud-header">COMMUNICATION LOG</div>
+        <div id="chat-history">
+            <div class="message ai-msg">J.A.R.V.I.S. Core V3.3 Online. Connected to OpenRouter Neural Net.</div>
+        </div>
+    </div>
+
+    <div id="input-area">
+        <input type="text" id="user-input" placeholder="Enter command..." autocomplete="off">
+        <button id="btn-send">SEND</button>
+    </div>
+
+    <!-- CONFIG MODAL -->
+    <div id="config-overlay"></div>
+    <div id="config-modal">
+        <div class="hud-header">SECURITY PROTOCOLS</div>
+        <div style="font-size:11px; margin-bottom:15px; color:#aaa;">AUTHENTICATION REQUIRED FOR NEURAL LINK</div>
+        <input type="password" id="api-key-input" placeholder="ENTER API KEY (sk-or-v1...)" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
+        <div class="warning-text">Key is stored locally in browser storage.</div>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <button id="btn-save-key" style="flex:1;">AUTHENTICATE</button>
+            <button id="btn-close-key" style="flex:1; background:transparent; border-color:#555; color:#555;">CANCEL</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ------------------------------------------------------------------
+         * GEMINI LLM CORE (Via OpenRouter)
+         * Handling Multimodal Requests & System Control
+         * ------------------------------------------------------------------
+         */
+        const GeminiCore = {
+            // Endpoints (OpenRouter for Google Models)
+            endpoint: "https://openrouter.ai/api/v1/chat/completions",
+            model: "google/gemini-2.0-flash-001",
+            
+            // System Prompt
+            systemInstruction: `You are J.A.R.V.I.S., a highly advanced AI interface.
+            1. Roleplay: Be concise, witty, robotic but polite (British influence). Address user as 'Sir'.
+            2. UI Control: You have direct control over the interface. If the user asks to change colors, modes, or alerts, you MUST include a JSON block at the VERY END of your response.
+            
+            JSON Format:
+            { "action": "SET_MODE", "value": "ALERT" }  // Modes: IDLE, LISTENING, THINKING, ALERT
+            { "action": "SET_COLOR", "value": 0 }       // Value is Hue (0=Red, 120=Green, 200=Blue, 280=Purple)
+            { "action": "SCAN_UI", "value": "TRUE" }    // To trigger effects
+            
+            Example: "I have engaged the security protocols, Sir. [JSON] { "action": "SET_MODE", "value": "ALERT" }"
+            `,
+
+            async sendText(text, apiKey) {
+                const payload = {
+                    model: this.model,
+                    messages: [
+                        { role: "system", content: this.systemInstruction },
+                        { role: "user", content: text + "\n\n(Remember to append JSON command if applicable)" }
+                    ]
+                };
+                return this.fetchGemini(payload, apiKey);
+            },
+
+            async sendImage(base64Image, prompt, apiKey) {
+                const payload = {
+                    model: this.model,
+                    messages: [
+                        { role: "system", content: this.systemInstruction },
+                        { 
+                            role: "user", 
+                            content: [
+                                { type: "text", text: prompt },
+                                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                            ] 
+                        }
+                    ]
+                };
+                return this.fetchGemini(payload, apiKey);
+            },
+
+            async fetchGemini(payload, apiKey) {
+                try {
+                    const response = await fetch(this.endpoint, {
+                        method: 'POST',
+                        headers: { 
+                            'Authorization': `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json',
+                            'HTTP-Referer': window.location.href,
+                            'X-Title': 'Jarvis AI'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        // HANDLE 401 AUTH ERROR
+                        if (response.status === 401) {
+                            localStorage.removeItem('jarvis_api_key'); 
+                            apiKey = DEFAULT_KEY; // Self-heal: Switch back to hardcoded key immediately
+                            throw new Error("Authentication Failed (401). Retrying on next command with default protocols.");
+                        }
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
+                    return data.choices[0].message.content;
+                } catch (e) {
+                    console.error("Gemini Error:", e);
+                    throw e;
+                }
+            },
+
+            // Parse response for Hidden JSON Commands to control HUD
+            executeCommands(response) {
+                // Regex to find JSON block at end of string
+                const jsonMatch = response.match(/\{[\s\S]*\}$/);
+                if (jsonMatch) {
+                    try {
+                        const command = JSON.parse(jsonMatch[0]);
+                        console.log("EXECUTING OMEGA PROTOCOL:", command);
+                        
+                        if (command.action === "SET_MODE") HoloCore.setMode(command.value);
+                        if (command.action === "SET_COLOR") HoloCore.updateTheme(command.value, 100, 50);
+                        
+                        // Return text without the JSON
+                        return response.replace(jsonMatch[0], '').trim();
+                    } catch (e) {
+                        return response;
+                    }
+                }
+                return response;
+            }
+        };
+
+        /**
+         * ------------------------------------------------------------------
+         * J.A.R.V.I.S. GESTURE ENGINE
+         * Logic to classify complex states from basic inputs
+         * ------------------------------------------------------------------
+         */
+        const GestureEngine = {
+            history: [], // For shake detection
+            lastX: 0, lastY: 0, lastAngle: 0,
+            
+            detect: function(x, y, scale, label, numHands) {
+                // 1. Analyze Motion (Velocity & Angle)
+                const dx = x - this.lastX;
+                const dy = y - this.lastY;
+                const speed = Math.sqrt(dx*dx + dy*dy);
+                
+                // Track History for Shake/Wave
+                if (this.history.length > 5) this.history.shift();
+                this.history.push({dx, dy, speed});
+
+                // Calculate Angular Change (For Rotation Gestures)
+                const angle = Math.atan2(y, x);
+                let dAngle = angle - this.lastAngle;
+                // Fix angle wrap-around (PI to -PI jump)
+                if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
+                if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
+
+                this.lastX = x; 
+                this.lastY = y;
+                this.lastAngle = angle;
+
+                // 2. Spatial Zones (Coordinates are -1 to 1)
+                const isTop = y < -0.3;
+                const isBottom = y > 0.3;
+                const isLeft = x < -0.3;
+                const isRight = x > 0.3;
+                
+                // 3. Multi-Hand Logic
+                if (numHands > 1) {
+                    if (label === 'closed') return 'DOUBLE_CLOSED'; // Stealth
+                    return 'DOUBLE_OPEN'; // Expand Max
+                }
+
+                // 4. Basic State Overrides
+                if (label === 'closed') return 'GRAB_CENTER'; // FIST DETECTED
+                if (label === 'pinch') return 'PINCH_CENTER';
+                if (label === 'point') return 'POINT_CENTER';
+
+                // 5. Rotation Logic (Open Hand, Away from center)
+                const radius = Math.sqrt(x*x + y*y);
+                if (radius > 0.2 && speed > 0.05) {
+                    // Threshold for circular motion vs random jitter
+                    if (dAngle > 0.15) return 'CLOCKWISE';
+                    if (dAngle < -0.15) return 'ANTICLOCKWISE';
+                }
+
+                // 6. Shake / Wave Logic (Direction reversals)
+                // Check if dx direction flipped multiple times in history with high speed
+                let reversals = 0;
+                let highSpeed = 0;
+                for(let i=1; i<this.history.length; i++) {
+                    if (Math.sign(this.history[i].dx) !== Math.sign(this.history[i-1].dx)) reversals++;
+                    if (this.history[i].speed > 0.1) highSpeed++;
+                }
+                
+                if (reversals >= 2 && highSpeed >= 3) {
+                    // If moving mostly horizontally, it's a WAVE, else SHAKE
+                    return 'SHAKE';
+                }
+                
+                // Sustained low frequency oscillation = WAVE (simulated here as simple shake variation)
+                if (reversals >= 1 && speed > 0.08 && speed < 0.2) {
+                    return 'WAVE';
+                }
+
+                // 7. Motion Gestures (Linear Swipes)
+                if (speed > 0.15) {
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        return dx > 0 ? 'SWIPE_RIGHT' : 'SWIPE_LEFT';
+                    } else {
+                        return dy > 0 ? 'SWIPE_DOWN' : 'SWIPE_UP';
+                    }
+                }
+                
+                // 8. Push/Pull (Scale based)
+                if (scale > 2.5) return 'PUSH'; // Very close
+                if (scale < 0.6) return 'PULL'; // Far away
+
+                // 9. Freeze (Low movement)
+                if (speed < 0.002) return 'FREEZE';
+
+                // 10. Zone Gestures (Corners)
+                if (isTop && isLeft) return 'ZONE_TL';
+                if (isTop && isRight) return 'ZONE_TR';
+                if (isBottom && isLeft) return 'ZONE_BL';
+                if (isBottom && isRight) return 'ZONE_BR';
+
+                // 11. Default
+                return 'HOVER_CENTER';
+            }
+        };
+
+        /**
+         * ------------------------------------------------------------------
+         * J.A.R.V.I.S. HOLOCORE
+         * High-Performance Physics & Animation Engine
+         * ------------------------------------------------------------------
+         */
+        const HoloCore = {
+            config: {
+                lerpFactor: 0.08, 
+                deadZone: 0.02,
+                baseHue: 170
+            },
+            state: {
+                mode: 'IDLE', // IDLE, LISTENING, THINKING, ALERT
+                target: { x: 0, y: 0, scale: 1, explode: 0 },
+                current: { x: 0, y: 0, scale: 1, explode: 0 },
+                velocity: 0,
+                breath: 0,
+                handVisible: false,
+                gesture: 'NONE',
+                sizeMod: 0 // PERSISTENT SIZE MODIFIER
+            },
+            ui: {
+                root: document.documentElement,
+                status: document.getElementById('status-text'),
+                gesture: document.getElementById('gesture-text'),
+                wrapper: document.getElementById('holo-wrapper')
+            },
+
+            setMode(mode) {
+                this.state.mode = mode;
+                this.ui.status.innerText = mode;
+
+                switch(mode) {
+                    case 'ALERT': this.updateTheme(0, 100, 50); break; // Red
+                    case 'THINKING': this.updateTheme(270, 100, 60); break; // Purple
+                    case 'LISTENING': this.updateTheme(270, 100, 60); break; // Purple
+                    case 'IDLE':
+                    default: this.updateTheme(170, 100, 50); // Cyan
+                }
+            },
+
+            /**
+             * Advanced Input Handler with 20 Gestures
+             */
+            updateInput(x, y, scale = 1, hasHand = false, label = 'open', numHands = 1) {
+                const s = this.state;
+                s.handVisible = hasHand;
+
+                if (hasHand) {
+                    // Determine Gesture using Engine
+                    const detectedGesture = GestureEngine.detect(x, y, scale, label, numHands);
+                    s.gesture = detectedGesture;
+                    this.ui.gesture.innerText = detectedGesture;
+
+                    // Apply Visual Logic based on Gesture
+                    this.applyGesturePhysics(detectedGesture, x, y, scale);
+                } else {
+                    // Reset if hand lost
+                    this.resetPhysics();
+                    this.ui.gesture.innerText = "SEARCHING...";
+                }
+            },
+
+            applyGesturePhysics(gesture, x, y, scale) {
+                const s = this.state;
+                const t = s.target;
+                const wrapper = this.ui.wrapper;
+                
+                // Clear previous classes
+                wrapper.classList.remove('gesture-grabbed', 'gesture-pinch', 'gesture-point', 'gesture-shake', 'gesture-freeze');
+
+                // DEFAULT TRACKING
+                if (Math.abs(x - t.x) > this.config.deadZone) t.x = x;
+                if (Math.abs(y - t.y) > this.config.deadZone) t.y = y;
+                
+                t.explode = 0;
+
+                // SPECIAL STATES
+                switch(gesture) {
+                    case 'GRAB_CENTER': // Fist -> Shrink
+                        wrapper.classList.add('gesture-grabbed');
+                        t.scale = 0.3; 
+                        break;
+                    case 'CLOCKWISE': // Rotate CW -> Enlarge Persistently
+                        s.sizeMod += 0.02;
+                        if(s.sizeMod > 2.0) s.sizeMod = 2.0;
+                        t.scale = scale + s.sizeMod;
+                        break;
+                    case 'ANTICLOCKWISE': // Rotate CCW -> Reduce Persistently
+                        s.sizeMod -= 0.02;
+                        if(s.sizeMod < -0.5) s.sizeMod = -0.5;
+                        t.scale = scale + s.sizeMod;
+                        break;
+                    case 'PINCH_CENTER':
+                        t.explode = 150; // Boom
+                        wrapper.classList.add('gesture-pinch');
+                        break;
+                    case 'POINT_CENTER':
+                        wrapper.classList.add('gesture-point');
+                        break;
+                    case 'FREEZE':
+                        wrapper.classList.add('gesture-freeze');
+                        break;
+                    case 'SHAKE':
+                        wrapper.classList.add('gesture-shake');
+                        break;
+                    case 'WAVE':
+                        // Rainbow cycle for wave
+                        this.updateTheme((Date.now() / 10) % 360, 100, 60);
+                        break;
+                    case 'PUSH':
+                        t.scale = 3.0; // Zoom
+                        break;
+                    case 'PULL':
+                        t.scale = 0.5; // Shrink
+                        break;
+                    case 'SWIPE_LEFT':
+                        t.x = -2; // Spin hard left
+                        break;
+                    case 'SWIPE_RIGHT':
+                        t.x = 2; // Spin hard right
+                        break;
+                    case 'SWIPE_UP':
+                        t.y = -2; // Spin hard up
+                        break;
+                    case 'SWIPE_DOWN':
+                        t.y = 2; // Spin hard down
+                        break;
+                    case 'DOUBLE_OPEN':
+                        t.scale = 2.0;
+                        t.explode = 50;
+                        break;
+                    case 'DOUBLE_CLOSED':
+                        t.scale = 0; // Hide
+                        break;
+                    case 'ZONE_TL': t.x = -0.8; t.y = -0.8; break;
+                    case 'ZONE_TR': t.x = 0.8; t.y = -0.8; break;
+                    case 'ZONE_BL': t.x = -0.8; t.y = 0.8; break;
+                    case 'ZONE_BR': t.x = 0.8; t.y = 0.8; break;
+                    case 'HOVER_CENTER':
+                        // Combine hand depth (scale) with persistent rotation modifier (sizeMod)
+                        t.scale = scale + s.sizeMod;
+                        break;
+                }
+            },
+
+            resetPhysics() {
+                this.ui.wrapper.className = 'holo-wrapper';
+                this.state.target.explode = 0;
+            },
+
+            render(deltaTime) {
+                const s = this.state;
+                const c = s.current;
+                const t = s.target;
+                
+                // Dynamic Lerp: Faster if grabbing/swiping
+                let f = (s.gesture.includes('SWIPE') || s.gesture.includes('GRAB')) ? 0.2 : this.config.lerpFactor;
+
+                // 1. PHYSICS INTERPOLATION
+                if (s.handVisible) {
+                    c.x += (t.x - c.x) * f;
+                    c.y += (t.y - c.y) * f;
+                    c.scale += (t.scale - c.scale) * f;
+                    c.explode += (t.explode - c.explode) * 0.1;
+                    
+                    const dx = t.x - c.x; const dy = t.y - c.y;
+                    s.velocity = Math.sqrt(dx*dx + dy*dy) * 100;
+                } else {
+                    // Idle Animation (Auto-Drift)
+                    c.x += Math.sin(Date.now() * 0.001) * 0.002;
+                    c.y += Math.cos(Date.now() * 0.0015) * 0.002;
+                    c.scale += (1 - c.scale) * 0.05;
+                    c.explode += (0 - c.explode) * 0.05;
+                    s.velocity *= 0.95;
+                }
+
+                // 2. BREATHING / PULSE
+                s.breath += deltaTime * 0.002;
+                let breathVal = 1 + Math.sin(s.breath) * 0.05;
+                if (s.mode !== 'IDLE') breathVal = 1 + Math.sin(s.breath * 5) * 0.1;
+
+                // 3. COLOR REACTIVITY
+                if (s.mode === 'IDLE') {
+                    if (s.gesture === 'GRAB_CENTER') {
+                        this.ui.root.style.setProperty('--base-h', 30); // Orange
+                    } else if (s.gesture === 'POINT_CENTER') {
+                        this.ui.root.style.setProperty('--base-h', 120); // Green
+                    } else if (s.gesture === 'PINCH_CENTER') {
+                        this.ui.root.style.setProperty('--base-h', 280); // Purple
+                    } else if (s.gesture === 'SHAKE') {
+                        // Keep shake color dynamic if needed, or default
+                    } else if (s.gesture === 'WAVE') {
+                        // Handled in applyPhysics
+                    } else if (s.velocity > 5) {
+                        const shift = Math.min(s.velocity * 3, 60);
+                        this.ui.root.style.setProperty('--base-h', this.config.baseHue + shift);
+                    } else {
+                        const curH = parseFloat(getComputedStyle(this.ui.root).getPropertyValue('--base-h'));
+                        if (Math.abs(curH - this.config.baseHue) > 0.5) {
+                            this.ui.root.style.setProperty('--base-h', curH + (this.config.baseHue - curH) * 0.05);
+                        }
+                    }
+                }
+
+                // 4. GPU UPDATE
+                this.ui.root.style.setProperty('--ry', `${c.x * 60}deg`); // Increased range
+                this.ui.root.style.setProperty('--rx', `${c.y * -60}deg`);
+                this.ui.root.style.setProperty('--scale', c.scale);
+                this.ui.root.style.setProperty('--breath', breathVal);
+                this.ui.root.style.setProperty('--explode', c.explode);
+            },
+
+            updateTheme(h, s, l) {
+                this.config.baseHue = h;
+                this.ui.root.style.setProperty('--base-h', h);
+                this.ui.root.style.setProperty('--base-s', `${s}%`);
+                this.ui.root.style.setProperty('--base-l', `${l}%`);
+            }
+        };
+
+        /**
+         * ------------------------------------------------------------------
+         * HAND TRACKING (Input System)
+         * ------------------------------------------------------------------
+         */
+        const video = document.getElementById('video');
+        const trackBtn = document.getElementById('btn-track');
+        let isTracking = false;
+        let model = null;
+        let lastDetectTime = 0;
+        const DETECT_INTERVAL = 1000 / 20;
+
+        const modelParams = {
+            flipHorizontal: true,
+            imageScaleFactor: 0.6,
+            maxNumBoxes: 2,
+            iouThreshold: 0.5,
+            scoreThreshold: 0.70,
+        };
+
+        trackBtn.addEventListener('click', async () => {
+            if (!model) {
+                trackBtn.innerText = "INITIALIZING SENSORS...";
+                trackBtn.disabled = true;
+                model = await handTrack.load(modelParams);
+                trackBtn.innerText = "TERMINATE TRACKING";
+                trackBtn.disabled = false;
+                trackBtn.classList.add('active');
+                startTracking();
+            } else {
+                isTracking = !isTracking;
+                if (isTracking) {
+                    startTracking();
+                    trackBtn.innerText = "TERMINATE TRACKING";
+                    trackBtn.classList.add('active');
+                } else {
+                    handTrack.stopVideo(video);
+                    trackBtn.innerText = "RESUME TRACKING";
+                    trackBtn.classList.remove('active');
+                    HoloCore.updateInput(0, 0, 1, false);
+                }
+            }
+        });
+
+        function startTracking() {
+            isTracking = true;
+            handTrack.startVideo(video).then(status => {
+                if (status) detectLoop();
+            });
+        }
+
+        async function detectLoop() {
+            if (!isTracking) return;
+            const now = performance.now();
+            if (now - lastDetectTime > DETECT_INTERVAL) {
+                const predictions = await model.detect(video);
+                
+                if (predictions.length > 0) {
+                    const p = predictions[0];
+                    const bbox = p.bbox;
+                    const gesture = p.label; 
+                    const numHands = predictions.length;
+
+                    const normX = ((bbox[0] + bbox[2]/2) / video.width * 2) - 1;
+                    const normY = ((bbox[1] + bbox[3]/2) / video.height * 2) - 1;
+                    const scale = 0.8 + (bbox[2] / video.width * 2);
+                    
+                    HoloCore.updateInput(normX, normY, scale, true, gesture, numHands);
+                } else {
+                    HoloCore.updateInput(0, 0, 1, false);
+                }
+                lastDetectTime = now;
+            }
+            requestAnimationFrame(detectLoop);
+        }
+
+        /**
+         * ------------------------------------------------------------------
+         * CHAT & LOGIC SYSTEM (Gemini Integrated)
+         * ------------------------------------------------------------------
+         */
+        const chatHistory = document.getElementById('chat-history');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('btn-send');
+        const securityBtn = document.getElementById('btn-security');
+        let isSecurityMode = false;
+
+        // --- CONFIG / API KEY MANAGEMENT ---
+        const configModal = document.getElementById('config-modal');
+        const configOverlay = document.getElementById('config-overlay');
+        const apiKeyInput = document.getElementById('api-key-input');
+        
+        // --- API KEY: Hardcoded Default per instructions ---
+        const DEFAULT_KEY = "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";
+        let apiKey = localStorage.getItem('jarvis_api_key') || DEFAULT_KEY;
+
+        if(apiKey) document.getElementById('btn-config').style.borderColor = 'var(--holo-color)';
+
+        document.getElementById('btn-config').addEventListener('click', () => {
+            configModal.style.display = 'block';
+            configOverlay.style.display = 'block';
+            apiKeyInput.value = apiKey;
+        });
+
+        document.getElementById('btn-close-key').addEventListener('click', () => {
+            configModal.style.display = 'none';
+            configOverlay.style.display = 'none';
+        });
+
+        document.getElementById('btn-save-key').addEventListener('click', () => {
+            apiKey = apiKeyInput.value.trim();
+            localStorage.setItem('jarvis_api_key', apiKey);
+            configModal.style.display = 'none';
+            configOverlay.style.display = 'none';
+            addMessage('AI', 'Identity confirmed. API Key updated.');
+            document.getElementById('btn-config').innerText = "SYSTEM CONFIG";
+        });
+
+        // --- VOICE TOGGLE ---
+        let isVoiceEnabled = false;
+        document.getElementById('btn-voice').addEventListener('click', (e) => {
+            isVoiceEnabled = !isVoiceEnabled;
+            e.target.innerText = isVoiceEnabled ? "VOICE: ON" : "VOICE: OFF";
+            e.target.classList.toggle('active');
+        });
+
+        // --- GEMINI VISION SCAN ---
+        const scanBtn = document.getElementById('btn-scan');
+        const capCanvas = document.getElementById('cap-canvas');
+        const capCtx = capCanvas.getContext('2d');
+
+        scanBtn.addEventListener('click', async () => {
+            if (!apiKey) {
+                addMessage('AI', '⚠ AUTH ERROR. Please configure API Key.');
+                return;
+            }
+            
+            addMessage('USER', '[INITIATING VISUAL SCAN...]');
+            HoloCore.setMode('THINKING');
+            
+            // Capture Frame
+            capCanvas.width = video.videoWidth || 640;
+            capCanvas.height = video.videoHeight || 480;
+            
+            // If video is not active/playing, this might be blank
+            if(video.readyState === video.HAVE_ENOUGH_DATA) {
+                capCtx.drawImage(video, 0, 0);
+            } else {
+                addMessage('AI', '⚠ Visual sensors offline. Please enable hand tracking camera.');
+                HoloCore.setMode('IDLE');
+                return;
+            }
+
+            const base64 = capCanvas.toDataURL('image/jpeg').split(',')[1];
+            
+            try {
+                const response = await GeminiCore.sendImage(base64, "Analyze this image. Identify key objects, people, and assess any potential security threats. Keep it concise.", apiKey);
+                const text = GeminiCore.executeCommands(response);
+                addMessage('AI', text);
+                speakResponse(text);
+            } catch (e) {
+                addMessage('AI', 'Visual processing failed: ' + e.message);
+            }
+            HoloCore.setMode('IDLE');
+        });
+
+        // Security Toggle
+        securityBtn.addEventListener('click', () => {
+            isSecurityMode = !isSecurityMode;
+            if (isSecurityMode) {
+                HoloCore.setMode('ALERT');
+                securityBtn.innerText = "SECURITY: ARMED";
+                securityBtn.classList.add('active');
+                addMessage('AI', 'Security protocols engaged. Sentry mode active.');
+            } else {
+                HoloCore.setMode('IDLE');
+                securityBtn.innerText = "SECURITY: OFF";
+                securityBtn.classList.remove('active');
+                addMessage('AI', 'Security protocols deactivated.');
+            }
+        });
+
+        // Chat Logic
+        async function handleSend() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            
+            if (!apiKey) {
+                addMessage('AI', '⚠ ACCESS DENIED. Please configure API Key in System Controls.');
+                configModal.style.display = 'block';
+                configOverlay.style.display = 'block';
+                return;
+            }
+
+            addMessage('USER', text);
+            userInput.value = '';
+            
+            if(!isSecurityMode) HoloCore.setMode('THINKING');
+            sendBtn.disabled = true;
+            
+            try {
+                const rawResponse = await GeminiCore.sendText(text, apiKey);
+                const finalResponse = GeminiCore.executeCommands(rawResponse);
+                
+                addMessage('AI', finalResponse);
+                speakResponse(finalResponse);
+
+            } catch (err) {
+                console.error(err);
+                addMessage('AI', "Unable to reach servers. Switching to offline protocols.");
+            }
+            
+            if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+
+        function speakResponse(text) {
+            if(window.speechSynthesis && isVoiceEnabled) {
+                const u = new SpeechSynthesisUtterance(text);
+                u.rate = 1.1; u.pitch = 0.9;
+                window.speechSynthesis.speak(u);
+            }
+        }
+
+        function addMessage(sender, text) {
+            const div = document.createElement('div');
+            div.className = `message ${sender === 'USER' ? 'user-msg' : 'ai-msg'}`;
+            div.innerText = text;
+            chatHistory.appendChild(div);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        userInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
+        sendBtn.addEventListener('click', handleSend);
+
+        /**
+         * ------------------------------------------------------------------
+         * MATRIX BACKGROUND (Optimized)
+         * ------------------------------------------------------------------
+         */
+        const matrixCanvas = document.getElementById('matrix-canvas');
+        const ctx = matrixCanvas.getContext('2d');
+        let matrixEnabled = true;
+        
+        document.getElementById('btn-matrix').addEventListener('click', (e) => {
+            matrixEnabled = !matrixEnabled;
+            e.target.innerText = matrixEnabled ? "MATRIX: ON" : "MATRIX: OFF";
+            matrixCanvas.style.display = matrixEnabled ? 'block' : 'none';
+        });
+
+        function resizeMatrix() {
+            matrixCanvas.width = window.innerWidth;
+            matrixCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeMatrix);
+        resizeMatrix();
+
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        const fontSize = 14;
+        let drops = [];
+        const columns = matrixCanvas.width / fontSize;
+        for(let x=0; x<columns; x++) drops[x] = 1;
+
+        let frameCount = 0;
+        function drawMatrix() {
+            if (!matrixEnabled) return;
+            if (frameCount++ % 2 !== 0) return;
+
+            ctx.fillStyle = "rgba(5, 5, 5, 0.05)";
+            ctx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+            
+            ctx.fillStyle = "#0F0"; 
+            ctx.font = fontSize + "px monospace";
+
+            for(let i=0; i<drops.length; i++) {
+                const text = chars.charAt(Math.floor(Math.random()*chars.length));
+                ctx.fillText(text, i*fontSize, drops[i]*fontSize);
+                if(drops[i]*fontSize > matrixCanvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+
+        /**
+         * ------------------------------------------------------------------
+         * MAIN LOOP
+         * ------------------------------------------------------------------
+         */
+        let lastTime = 0;
+        function loop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            if (document.visibilityState === 'visible') {
+                HoloCore.render(deltaTime);
+                drawMatrix();
+            }
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>

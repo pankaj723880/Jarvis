@@ -292,6 +292,24 @@
             justify-content: space-between;
             text-shadow: 0 0 5px var(--holo-color);
         }
+
+        #config-modal {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 320px;
+            background: rgba(10, 15, 15, 0.95);
+            border: 1px solid var(--holo-color);
+            padding: 20px;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+        }
+        #config-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 999; display: none;
+            backdrop-filter: blur(5px);
+        }
+        .warning-text { color: #ff3333; font-size: 10px; margin-top: 5px; }
         
         /* Capture Canvas (Hidden) */
         #cap-canvas { display: none; }
@@ -327,6 +345,7 @@
     <!-- LEFT CONTROLS -->
     <div id="left-panel">
         <div class="hud-header">SYSTEM CONTROLS</div>
+        <button id="btn-config">⚠ SYSTEM CONFIG</button>
         <button id="btn-track">INIT HAND TRACKING</button>
         <button id="btn-scan">✨ VISION SCAN</button>
         <button id="btn-voice">VOICE: OFF</button>
@@ -370,7 +389,7 @@
     <div id="chat-panel">
         <div class="hud-header">COMMUNICATION LOG</div>
         <div id="chat-history">
-            <div class="message ai-msg">J.A.R.V.I.S. Core V3.5 Online. Connected to OpenRouter.</div>
+            <div class="message ai-msg">J.A.R.V.I.S. Core V4.1 Online. Connected to OpenRouter.</div>
         </div>
     </div>
 
@@ -379,9 +398,26 @@
         <button id="btn-send">SEND</button>
     </div>
 
+    <!-- CONFIG MODAL -->
+    <div id="config-overlay"></div>
+    <div id="config-modal">
+        <div class="hud-header">SECURITY PROTOCOLS</div>
+        <div style="font-size:11px; margin-bottom:15px; color:#aaa;">AUTHENTICATION REQUIRED FOR NEURAL LINK</div>
+        <input type="password" id="api-key-input" placeholder="ENTER API KEY" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
+        <div class="warning-text">Authorization Required.</div>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <button id="btn-save-key" style="flex:1;">AUTHENTICATE</button>
+            <button id="btn-close-key" style="flex:1; background:transparent; border-color:#555; color:#555;">CANCEL</button>
+        </div>
+    </div>
+
     <script>
-        // GLOBAL API KEY (Hardcoded)
-        const API_KEY = "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";
+        // GLOBAL API KEY (Empty by default to force user input)
+        const DEFAULT_KEY = ""; 
+        
+        // Initialize Key: Check storage first, else empty
+        let currentApiKey = localStorage.getItem('jarvis_api_key') || DEFAULT_KEY;
+        let pendingCommand = null; // Store message if auth is needed
 
         /**
          * ------------------------------------------------------------------
@@ -392,10 +428,11 @@
         const GeminiCore = {
             // Endpoints (OpenRouter for Google Models)
             endpoint: "https://openrouter.ai/api/v1/chat/completions",
-            // MODEL FALLBACK SYSTEM
+            // FALLBACK SYSTEM: Use free model to avoid rate limits/credits issues if possible
             models: [
-                "google/gemini-2.0-flash-001", // Primary (Fastest)
-                "google/gemini-flash-1.5"      // Backup (Stable)
+                "google/gemini-2.0-flash-lite-preview-02-05:free", // Newest Free
+                "google/gemini-2.0-flash-exp:free", // Legacy Free
+                "google/gemini-2.0-flash-001" // Standard
             ],
             
             // System Prompt
@@ -438,7 +475,14 @@
             // Auto-Switch Models on 429/Error
             async tryFetch(payloadBase, modelIndex = 0) {
                 if (modelIndex >= this.models.length) {
-                    throw new Error("All neural pathways unavailable (Rate Limited).");
+                    showConfigModal();
+                    throw new Error("All neural pathways unavailable (Rate Limited or Auth Failed).");
+                }
+
+                // If Key is Missing, Stop immediately
+                if (!currentApiKey) {
+                    showConfigModal();
+                    throw new Error("API Key Missing. Please Authenticate.");
                 }
 
                 const currentModel = this.models[modelIndex];
@@ -448,7 +492,7 @@
                     const response = await fetch(this.endpoint, {
                         method: 'POST',
                         headers: { 
-                            'Authorization': `Bearer ${API_KEY}`,
+                            'Authorization': `Bearer ${currentApiKey}`,
                             'Content-Type': 'application/json',
                             'HTTP-Referer': 'https://jarvis-ui.com', 
                             'X-Title': 'Jarvis AI'
@@ -457,11 +501,19 @@
                     });
                     
                     if (!response.ok) {
-                        // Rate Limit or Auth Error? Switch model
+                        // AUTH ERROR (401)
+                        if (response.status === 401) {
+                            // Do NOT clear key automatically, just warn
+                            showConfigModal(); 
+                            throw new Error("ACCESS DENIED (401). Key Rejected. Please update API Key.");
+                        }
+
+                        // Rate Limit (429) -> Switch Model
                         if (response.status === 429 || response.status === 503) {
                             console.warn(`Model ${currentModel} failed. Switching...`);
                             return this.tryFetch(payloadBase, modelIndex + 1);
                         }
+                        
                         throw new Error(`API Error: ${response.status} ${response.statusText}`);
                     }
                     
@@ -469,8 +521,8 @@
                     if (data.error) throw new Error(data.error.message);
                     return data.choices[0].message.content;
                 } catch (e) {
-                    // Recursive retry for network errors
-                    if (modelIndex < this.models.length - 1) {
+                    // Recursive retry only for network/rate limit issues, NOT auth
+                    if (modelIndex < this.models.length - 1 && !e.message.includes('401')) {
                         return this.tryFetch(payloadBase, modelIndex + 1);
                     }
                     console.error("Gemini Error:", e);
@@ -497,6 +549,47 @@
                 return response;
             }
         };
+
+        // --- KEY MANAGEMENT UI LOGIC ---
+        const configModal = document.getElementById('config-modal');
+        const configOverlay = document.getElementById('config-overlay');
+        const apiKeyInput = document.getElementById('api-key-input');
+
+        function showConfigModal() {
+            configModal.style.display = 'block';
+            configOverlay.style.display = 'block';
+            // Show current key so user can edit it
+            apiKeyInput.value = currentApiKey;
+            apiKeyInput.focus();
+        }
+
+        document.getElementById('btn-config').addEventListener('click', () => {
+            apiKeyInput.value = currentApiKey;
+            showConfigModal();
+        });
+
+        document.getElementById('btn-close-key').addEventListener('click', () => {
+            configModal.style.display = 'none';
+            configOverlay.style.display = 'none';
+        });
+
+        document.getElementById('btn-save-key').addEventListener('click', () => {
+            const newKey = apiKeyInput.value.trim();
+            if(newKey) {
+                currentApiKey = newKey;
+                localStorage.setItem('jarvis_api_key', newKey);
+                configModal.style.display = 'none';
+                configOverlay.style.display = 'none';
+                addMessage('AI', 'Identity confirmed. New API Key engaged.');
+                
+                // RESUME CHAT IF PENDING
+                if(pendingCommand) {
+                    userInput.value = pendingCommand;
+                    handleSend();
+                    pendingCommand = null;
+                }
+            }
+        });
 
         /**
          * ------------------------------------------------------------------
@@ -679,6 +772,7 @@
                     const dx = t.x - c.x; const dy = t.y - c.y;
                     s.velocity = Math.sqrt(dx*dx + dy*dy) * 100;
                 } else {
+                    // Idle Animation (Auto-Drift)
                     c.x += Math.sin(Date.now() * 0.001) * 0.002;
                     c.y += Math.cos(Date.now() * 0.0015) * 0.002;
                     c.scale += (1 - c.scale) * 0.05;
@@ -686,6 +780,7 @@
                     s.velocity *= 0.95;
                 }
 
+                // 2. BREATHING / PULSE
                 s.breath += deltaTime * 0.002;
                 let breathVal = 1 + Math.sin(s.breath) * 0.05;
                 if (s.mode !== 'IDLE') breathVal = 1 + Math.sin(s.breath * 5) * 0.1;
@@ -823,6 +918,11 @@
         const capCtx = capCanvas.getContext('2d');
 
         scanBtn.addEventListener('click', async () => {
+            if (!currentApiKey) {
+                showConfigModal();
+                return;
+            }
+            
             addMessage('USER', '[INITIATING VISUAL SCAN...]');
             HoloCore.setMode('THINKING');
             
@@ -871,6 +971,14 @@
             const text = userInput.value.trim();
             if (!text) return;
             
+            if (!currentApiKey) {
+                // SAVE PENDING AND SHOW MODAL
+                pendingCommand = text;
+                addMessage('AI', '⚠ AUTHENTICATION REQUIRED. Access restricted.');
+                showConfigModal();
+                return;
+            }
+
             addMessage('USER', text);
             userInput.value = '';
             
@@ -887,10 +995,6 @@
             } catch (err) {
                 console.error(err);
                 addMessage('AI', `Server Error: ${err.message}`);
-                // If Rate Limited, warn user
-                if (err.message.includes('429')) {
-                    addMessage('AI', "⚠ Neural Net Overloaded. Rerouting to backup servers...");
-                }
             }
             
             if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');

@@ -389,7 +389,7 @@
     <div id="chat-panel">
         <div class="hud-header">COMMUNICATION LOG</div>
         <div id="chat-history">
-            <div class="message ai-msg">J.A.R.V.I.S. Core V4.1 Online. Connected to OpenRouter.</div>
+            <div class="message ai-msg">J.A.R.V.I.S. Core V4.2 Online. Connected to OpenRouter.</div>
         </div>
     </div>
 
@@ -403,8 +403,8 @@
     <div id="config-modal">
         <div class="hud-header">SECURITY PROTOCOLS</div>
         <div style="font-size:11px; margin-bottom:15px; color:#aaa;">AUTHENTICATION REQUIRED FOR NEURAL LINK</div>
-        <input type="password" id="api-key-input" placeholder="ENTER API KEY" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
-        <div class="warning-text">Authorization Required.</div>
+        <input type="password" id="api-key-input" placeholder="ENTER OPENROUTER KEY (sk-or-v1...)" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
+        <div class="warning-text" id="auth-warning">Authorization Failed. Check Key.</div>
         <div style="display:flex; gap:10px; margin-top:20px;">
             <button id="btn-save-key" style="flex:1;">AUTHENTICATE</button>
             <button id="btn-close-key" style="flex:1; background:transparent; border-color:#555; color:#555;">CANCEL</button>
@@ -412,40 +412,34 @@
     </div>
 
     <script>
-        // GLOBAL API KEY (Empty by default to force user input)
+        // GLOBAL API KEY (Empty by default)
         const DEFAULT_KEY = ""; 
         
-        // Initialize Key: Check storage first, else empty
+        // Initialize Key: Check storage first
         let currentApiKey = localStorage.getItem('jarvis_api_key') || DEFAULT_KEY;
         let pendingCommand = null; // Store message if auth is needed
 
         /**
          * ------------------------------------------------------------------
          * GEMINI LLM CORE (Via OpenRouter)
-         * Handling Multimodal Requests & System Control
          * ------------------------------------------------------------------
          */
         const GeminiCore = {
-            // Endpoints (OpenRouter for Google Models)
             endpoint: "https://openrouter.ai/api/v1/chat/completions",
-            // FALLBACK SYSTEM: Use free model to avoid rate limits/credits issues if possible
             models: [
-                "google/gemini-2.0-flash-lite-preview-02-05:free", // Newest Free
-                "google/gemini-2.0-flash-exp:free", // Legacy Free
-                "google/gemini-2.0-flash-001" // Standard
+                "google/gemini-2.0-flash-lite-preview-02-05:free", 
+                "google/gemini-2.0-flash-exp:free", 
+                "google/gemini-2.0-flash-001"
             ],
             
-            // System Prompt
             systemInstruction: `You are J.A.R.V.I.S., a highly advanced AI interface.
             1. Roleplay: Be concise, witty, robotic but polite (British influence). Address user as 'Sir'.
             2. UI Control: You have direct control over the interface. If the user asks to change colors, modes, or alerts, you MUST include a JSON block at the VERY END of your response.
             
             JSON Format:
-            { "action": "SET_MODE", "value": "ALERT" }  // Modes: IDLE, LISTENING, THINKING, ALERT
-            { "action": "SET_COLOR", "value": 0 }       // Value is Hue (0=Red, 120=Green, 200=Blue, 280=Purple)
-            { "action": "SCAN_UI", "value": "TRUE" }    // To trigger effects
-            
-            Example: "I have engaged the security protocols, Sir. [JSON] { "action": "SET_MODE", "value": "ALERT" }"
+            { "action": "SET_MODE", "value": "ALERT" }
+            { "action": "SET_COLOR", "value": 0 }
+            { "action": "SCAN_UI", "value": "TRUE" }
             `,
 
             async sendText(text) {
@@ -475,14 +469,12 @@
             // Auto-Switch Models on 429/Error
             async tryFetch(payloadBase, modelIndex = 0) {
                 if (modelIndex >= this.models.length) {
-                    showConfigModal();
-                    throw new Error("All neural pathways unavailable (Rate Limited or Auth Failed).");
+                    throw new Error("All neural pathways unavailable.");
                 }
 
-                // If Key is Missing, Stop immediately
                 if (!currentApiKey) {
-                    showConfigModal();
-                    throw new Error("API Key Missing. Please Authenticate.");
+                    showConfigModal("API Key Required.");
+                    throw new Error("API Key Missing.");
                 }
 
                 const currentModel = this.models[modelIndex];
@@ -503,9 +495,8 @@
                     if (!response.ok) {
                         // AUTH ERROR (401)
                         if (response.status === 401) {
-                            // Do NOT clear key automatically, just warn
-                            showConfigModal(); 
-                            throw new Error("ACCESS DENIED (401). Key Rejected. Please update API Key.");
+                            showConfigModal("Access Denied (401). Invalid Key."); 
+                            throw new Error("ACCESS DENIED (401).");
                         }
 
                         // Rate Limit (429) -> Switch Model
@@ -514,14 +505,13 @@
                             return this.tryFetch(payloadBase, modelIndex + 1);
                         }
                         
-                        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                        throw new Error(`API Error: ${response.status}`);
                     }
                     
                     const data = await response.json();
                     if (data.error) throw new Error(data.error.message);
                     return data.choices[0].message.content;
                 } catch (e) {
-                    // Recursive retry only for network/rate limit issues, NOT auth
                     if (modelIndex < this.models.length - 1 && !e.message.includes('401')) {
                         return this.tryFetch(payloadBase, modelIndex + 1);
                     }
@@ -530,21 +520,15 @@
                 }
             },
 
-            // Parse response for Hidden JSON Commands to control HUD
             executeCommands(response) {
                 const jsonMatch = response.match(/\{[\s\S]*\}$/);
                 if (jsonMatch) {
                     try {
                         const command = JSON.parse(jsonMatch[0]);
-                        console.log("EXECUTING OMEGA PROTOCOL:", command);
-                        
                         if (command.action === "SET_MODE") HoloCore.setMode(command.value);
                         if (command.action === "SET_COLOR") HoloCore.updateTheme(command.value, 100, 50);
-                        
                         return response.replace(jsonMatch[0], '').trim();
-                    } catch (e) {
-                        return response;
-                    }
+                    } catch (e) { return response; }
                 }
                 return response;
             }
@@ -554,20 +538,17 @@
         const configModal = document.getElementById('config-modal');
         const configOverlay = document.getElementById('config-overlay');
         const apiKeyInput = document.getElementById('api-key-input');
+        const authWarning = document.getElementById('auth-warning');
 
-        function showConfigModal() {
+        function showConfigModal(msg = "Authorization Required.") {
             configModal.style.display = 'block';
             configOverlay.style.display = 'block';
-            // Show current key so user can edit it
+            authWarning.innerText = msg;
             apiKeyInput.value = currentApiKey;
             apiKeyInput.focus();
         }
 
-        document.getElementById('btn-config').addEventListener('click', () => {
-            apiKeyInput.value = currentApiKey;
-            showConfigModal();
-        });
-
+        document.getElementById('btn-config').addEventListener('click', () => showConfigModal());
         document.getElementById('btn-close-key').addEventListener('click', () => {
             configModal.style.display = 'none';
             configOverlay.style.display = 'none';
@@ -576,13 +557,17 @@
         document.getElementById('btn-save-key').addEventListener('click', () => {
             const newKey = apiKeyInput.value.trim();
             if(newKey) {
+                if(!newKey.startsWith('sk-or-v1')) {
+                    authWarning.innerText = "Invalid Format. Must start with 'sk-or-v1'.";
+                    return;
+                }
                 currentApiKey = newKey;
                 localStorage.setItem('jarvis_api_key', newKey);
                 configModal.style.display = 'none';
                 configOverlay.style.display = 'none';
-                addMessage('AI', 'Identity confirmed. New API Key engaged.');
+                addMessage('AI', 'Identity confirmed. Neural Link established.');
                 
-                // RESUME CHAT IF PENDING
+                // AUTO RESUME CHAT
                 if(pendingCommand) {
                     userInput.value = pendingCommand;
                     handleSend();
@@ -590,6 +575,45 @@
                 }
             }
         });
+
+        // --- CHAT LOGIC ---
+        async function handleSend() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            
+            if (!currentApiKey) {
+                pendingCommand = text;
+                addMessage('AI', '⚠ AUTHENTICATION REQUIRED. Access restricted.');
+                showConfigModal();
+                return;
+            }
+
+            addMessage('USER', text);
+            userInput.value = '';
+            
+            if(!isSecurityMode) HoloCore.setMode('THINKING');
+            sendBtn.disabled = true;
+            
+            try {
+                const rawResponse = await GeminiCore.sendText(text);
+                const finalResponse = GeminiCore.executeCommands(rawResponse);
+                addMessage('AI', finalResponse);
+                speakResponse(finalResponse);
+            } catch (err) {
+                if(err.message.includes('401')) {
+                     pendingCommand = text; // Save for retry
+                     addMessage('AI', '⚠ KEY REVOKED. Please update configuration.');
+                } else {
+                     addMessage('AI', `Server Error: ${err.message}`);
+                }
+            }
+            
+            if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+
+        // ... [Rest of the code remains the same: GestureEngine, HoloCore, HandTracking, Matrix, Loop] ...
 
         /**
          * ------------------------------------------------------------------
@@ -919,7 +943,7 @@
 
         scanBtn.addEventListener('click', async () => {
             if (!currentApiKey) {
-                showConfigModal();
+                addMessage('AI', '⚠ AUTH ERROR. Please configure API Key.');
                 return;
             }
             
@@ -965,42 +989,6 @@
                 addMessage('AI', 'Security protocols deactivated.');
             }
         });
-
-        // Chat Logic
-        async function handleSend() {
-            const text = userInput.value.trim();
-            if (!text) return;
-            
-            if (!currentApiKey) {
-                // SAVE PENDING AND SHOW MODAL
-                pendingCommand = text;
-                addMessage('AI', '⚠ AUTHENTICATION REQUIRED. Access restricted.');
-                showConfigModal();
-                return;
-            }
-
-            addMessage('USER', text);
-            userInput.value = '';
-            
-            if(!isSecurityMode) HoloCore.setMode('THINKING');
-            sendBtn.disabled = true;
-            
-            try {
-                const rawResponse = await GeminiCore.sendText(text);
-                const finalResponse = GeminiCore.executeCommands(rawResponse);
-                
-                addMessage('AI', finalResponse);
-                speakResponse(finalResponse);
-
-            } catch (err) {
-                console.error(err);
-                addMessage('AI', `Server Error: ${err.message}`);
-            }
-            
-            if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');
-            sendBtn.disabled = false;
-            userInput.focus();
-        }
 
         function speakResponse(text) {
             if(window.speechSynthesis && isVoiceEnabled) {

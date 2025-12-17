@@ -455,8 +455,17 @@
 
     <script>
         // --- 1. API KEY CONFIGURATION MODIFIED ---
+        // OPTIONAL: Paste your OpenRouter API Key here to avoid typing it in the UI
+        // Example: const ENV_API_KEY = "sk-or-v1-xxxxxxxx";
+        const ENV_API_KEY = ""; 
+
         const apiKeyInput = document.getElementById('api-key-input');
         
+        // Initialize input if env var exists
+        if (ENV_API_KEY) {
+            apiKeyInput.value = ENV_API_KEY;
+        }
+
         // Helper to get and clean key
         function getApiKey() {
             let key = apiKeyInput.value.trim();

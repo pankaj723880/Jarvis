@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>J.A.R.V.I.S. AI // Gemini Integrated</title>
+    <title>J.A.R.V.I.S. AI // Gemini Integrated V5</title>
     
     <!-- AI & Vision Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/handtrackjs/dist/handtrack.min.js"></script>
@@ -16,7 +16,7 @@
             --ry: 0deg;
             --scale: 1;
             --breath: 1;
-            --explode: 0; /* New: For expanding geometry */
+            --explode: 0; 
 
             /* Dynamic Color Theme */
             --base-h: 180;  /* Cyan Base */
@@ -207,6 +207,7 @@
         }
         .user-msg { border-color: #fff; text-align: right; background: rgba(50, 50, 50, 0.4); }
         .ai-msg { border-color: var(--holo-color); }
+        .sys-msg { border-color: #ffaa00; color: #ffaa00; font-style: italic; font-size: 11px; }
 
         #input-area {
             position: fixed;
@@ -215,6 +216,7 @@
             z-index: 20;
             display: flex;
             gap: 5px;
+            align-items: center;
         }
 
         input[type="text"] {
@@ -239,9 +241,29 @@
             letter-spacing: 1px;
             transition: all 0.2s;
             clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         button:hover { background: var(--holo-color); color: #000; }
         button.active { background: var(--holo-color); color: #000; box-shadow: 0 0 15px var(--holo-color); }
+
+        /* Icon Buttons */
+        .icon-btn {
+            padding: 10px;
+            min-width: 40px;
+        }
+        
+        .mic-active {
+            animation: pulse-red 1.5s infinite;
+            border-color: #ff3333 !important;
+            color: #ff3333 !important;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 51, 51, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); }
+        }
 
         /* Special Gemini Buttons */
         #btn-scan {
@@ -320,6 +342,9 @@
     <video id="video"></video>
     <canvas id="matrix-canvas"></canvas>
     <canvas id="cap-canvas"></canvas>
+    
+    <!-- Hidden File Input -->
+    <input type="file" id="file-input" accept="image/*" style="display: none;">
 
     <!-- 3D HOLOGRAM STAGE -->
     <div id="stage-container">
@@ -347,8 +372,8 @@
         <div class="hud-header">SYSTEM CONTROLS</div>
         <button id="btn-config">⚠ SYSTEM CONFIG</button>
         <button id="btn-track">INIT HAND TRACKING</button>
-        <button id="btn-scan">✨ VISION SCAN</button>
-        <button id="btn-voice">VOICE: OFF</button>
+        <button id="btn-scan">✨ VISION SCAN (CAM)</button>
+        <button id="btn-voice">TTS AUDIO: OFF</button>
         <button id="btn-security">SECURITY: OFF</button>
         <button id="btn-matrix">MATRIX: ON</button>
         
@@ -389,12 +414,14 @@
     <div id="chat-panel">
         <div class="hud-header">COMMUNICATION LOG</div>
         <div id="chat-history">
-            <div class="message ai-msg">J.A.R.V.I.S. Core V4.2 Online. Connected to OpenRouter.</div>
+            <div class="message ai-msg">J.A.R.V.I.S. Core V5.0 Online. Voice & File Systems Active.</div>
         </div>
     </div>
 
     <div id="input-area">
-        <input type="text" id="user-input" placeholder="Enter command..." autocomplete="off">
+        <button id="btn-upload" class="icon-btn" title="Upload Image">📁</button>
+        <input type="text" id="user-input" placeholder="Type or use voice..." autocomplete="off">
+        <button id="btn-mic" class="icon-btn" title="Voice Command">🎤</button>
         <button id="btn-send">SEND</button>
     </div>
 
@@ -613,7 +640,80 @@
             userInput.focus();
         }
 
-        // ... [Rest of the code remains the same: GestureEngine, HoloCore, HandTracking, Matrix, Loop] ...
+        // --- NEW: VOICE COMMANDS (Web Speech API) ---
+        const micBtn = document.getElementById('btn-mic');
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            
+            recognition.onstart = () => {
+                micBtn.classList.add('mic-active');
+                userInput.placeholder = "Listening...";
+            };
+
+            recognition.onend = () => {
+                micBtn.classList.remove('mic-active');
+                userInput.placeholder = "Type or use voice...";
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                userInput.value = transcript;
+                setTimeout(() => handleSend(), 500); // Auto-send after delay
+            };
+            
+            micBtn.addEventListener('click', () => {
+                if(micBtn.classList.contains('mic-active')) {
+                    recognition.stop();
+                } else {
+                    recognition.start();
+                }
+            });
+        } else {
+            micBtn.style.display = 'none';
+            console.log("Web Speech API not supported.");
+        }
+
+        // --- NEW: FILE UPLOAD LOGIC ---
+        const uploadBtn = document.getElementById('btn-upload');
+        const fileInput = document.getElementById('file-input');
+
+        uploadBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Reset input so same file can be selected again
+            e.target.value = '';
+
+            addMessage('SYS', `Analyzing file: ${file.name}...`);
+            HoloCore.setMode('THINKING');
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                const base64Raw = event.target.result; 
+                // Strip metadata prefix for Gemini if needed, but our GeminiCore usage handles full data URI?
+                // Actually openrouter/gemini usually expects just base64 data or url.
+                // Let's strip the "data:image/jpeg;base64," part.
+                const base64Data = base64Raw.split(',')[1];
+
+                try {
+                    const response = await GeminiCore.sendImage(base64Data, "Analyze this uploaded image. Describe it and check for anomalies.");
+                    const text = GeminiCore.executeCommands(response);
+                    addMessage('AI', text);
+                    speakResponse(text);
+                } catch (err) {
+                    addMessage('AI', 'Image analysis failed: ' + err.message);
+                }
+                HoloCore.setMode('IDLE');
+            };
+            reader.readAsDataURL(file);
+        });
 
         /**
          * ------------------------------------------------------------------
@@ -932,7 +1032,7 @@
         let isVoiceEnabled = false;
         document.getElementById('btn-voice').addEventListener('click', (e) => {
             isVoiceEnabled = !isVoiceEnabled;
-            e.target.innerText = isVoiceEnabled ? "VOICE: ON" : "VOICE: OFF";
+            e.target.innerText = isVoiceEnabled ? "TTS AUDIO: ON" : "TTS AUDIO: OFF";
             e.target.classList.toggle('active');
         });
 
@@ -1000,7 +1100,7 @@
 
         function addMessage(sender, text) {
             const div = document.createElement('div');
-            div.className = `message ${sender === 'USER' ? 'user-msg' : 'ai-msg'}`;
+            div.className = `message ${sender === 'USER' ? 'user-msg' : (sender === 'SYS' ? 'sys-msg' : 'ai-msg')}`;
             div.innerText = text;
             chatHistory.appendChild(div);
             chatHistory.scrollTop = chatHistory.scrollHeight;

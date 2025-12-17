@@ -438,10 +438,8 @@
     </div>
 
     <script>
-        // --- 1. API KEY CONFIGURATION (VERCEL / ENV) ---
-        // This variable is assumed to be populated by your build system or Vercel Environment Injection.
-        // It safely checks for 'process' to avoid reference errors in pure browser environments.
-        const API_KEY = (typeof process !== 'undefined' && process.env) ? process.env.OPENROUTER_API_KEY : '';
+        // --- 1. API KEY CONFIGURATION ---
+        const API_KEY = "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";
 
         /**
          * ------------------------------------------------------------------

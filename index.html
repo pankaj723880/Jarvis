@@ -338,19 +338,6 @@
 
         /* Capture Canvas (Hidden) */
         #cap-canvas { display: none; }
-        
-        /* Key Input Style */
-        .key-input {
-            width: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px dashed var(--holo-color);
-            color: #fff;
-            padding: 8px;
-            font-size: 10px;
-            margin-bottom: 10px;
-            box-sizing: border-box;
-        }
-        .key-input:focus { border-style: solid; outline: none; background: rgba(0, 20, 20, 0.8); }
     </style>
 </head>
 <body>
@@ -388,9 +375,6 @@
 
     <!-- SIDEBAR CONTROLS -->
     <div id="sidebar">
-        <!-- NEW API KEY CONFIG -->
-        <div class="hud-header">API KEY CONFIGURATION</div>
-        <input type="password" id="api-key-input" class="key-input" placeholder="PASTE OPENROUTER KEY HERE...">
         
         <div class="hud-header">SYSTEM CONTROLS</div>
         
@@ -442,7 +426,7 @@
     <div id="chat-panel">
         <div class="hud-header">COMMUNICATION LOG</div>
         <div id="chat-history">
-            <div class="message ai-msg">J.A.R.V.I.S. Core V5.0 Online. Please configure API Key in Sidebar.</div>
+            <div class="message ai-msg">J.A.R.V.I.S. Core V5.0 Online. Env Key Active.</div>
         </div>
     </div>
 
@@ -454,30 +438,10 @@
     </div>
 
     <script>
-        // --- 1. API KEY CONFIGURATION MODIFIED ---
-        // OPTIONAL: Paste your OpenRouter API Key here to avoid typing it in the UI
-        // Example: const ENV_API_KEY = "sk-or-v1-xxxxxxxx";
-        const ENV_API_KEY = ""; 
-
-        const apiKeyInput = document.getElementById('api-key-input');
-        
-        // Initialize input if env var exists
-        if (ENV_API_KEY) {
-            apiKeyInput.value = ENV_API_KEY;
-        }
-
-        // Helper to get and clean key
-        function getApiKey() {
-            let key = apiKeyInput.value.trim();
-            // Auto-cleaning logic (removes "open router api key-" prefix if pasted)
-            const match = key.match(/(sk-or-v1-[a-zA-Z0-9]{64})/);
-            if (match) {
-                // If found dirty key, clean it in UI too
-                if (key !== match[0]) apiKeyInput.value = match[0];
-                return match[0];
-            }
-            return key;
-        }
+        // --- 1. API KEY CONFIGURATION (VERCEL / ENV) ---
+        // This variable is assumed to be populated by your build system or Vercel Environment Injection.
+        // It safely checks for 'process' to avoid reference errors in pure browser environments.
+        const API_KEY = (typeof process !== 'undefined' && process.env) ? process.env.OPENROUTER_API_KEY : '';
 
         /**
          * ------------------------------------------------------------------
@@ -493,7 +457,7 @@
             hamburgerBtn.innerHTML = sidebar.classList.contains('open') ? '×' : '☰';
         });
 
-        // Close sidebar when clicking outside (but ignore key input clicks)
+        // Close sidebar when clicking outside
         document.addEventListener('click', (e) => {
             if (sidebar.classList.contains('open') && 
                 !sidebar.contains(e.target) && 
@@ -553,12 +517,8 @@
 
             // Auto-Switch Models on 429/Error
             async tryFetch(payloadBase, modelIndex = 0) {
-                const apiKey = getApiKey();
-                
-                if (!apiKey) {
-                    sidebar.classList.add('open');
-                    apiKeyInput.focus();
-                    throw new Error("API Key Missing. Please enter it in the Sidebar.");
+                if (!API_KEY) {
+                    throw new Error("API Key Missing. Check Vercel Environment Variables.");
                 }
 
                 if (modelIndex >= this.models.length) {
@@ -572,7 +532,7 @@
                     const response = await fetch(this.endpoint, {
                         method: 'POST',
                         headers: { 
-                            'Authorization': `Bearer ${apiKey}`,
+                            'Authorization': `Bearer ${API_KEY}`,
                             'Content-Type': 'application/json',
                             'HTTP-Referer': window.location.href, 
                             'X-Title': 'Jarvis AI'
@@ -642,7 +602,6 @@
                 speakResponse(finalResponse);
             } catch (err) {
                 addMessage('AI', `System Error: ${err.message}`);
-                if (err.message.includes('Key')) sidebar.classList.add('open');
             }
             
             if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');

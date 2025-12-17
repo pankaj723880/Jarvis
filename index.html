@@ -11,7 +11,7 @@
     <style>
         /* --- 1. CORE VARIABLES & THEME --- */
         :root {
-            /* Hologram Physics State (Driven by JS) */
+            /* Hologram Physics State */
             --rx: 0deg;
             --ry: 0deg;
             --scale: 1;
@@ -25,7 +25,7 @@
             --holo-color: hsla(var(--base-h), var(--base-s), var(--base-l), 0.8);
             
             --bg-dark: #050505;
-            --panel-bg: rgba(10, 15, 15, 0.85);
+            --panel-bg: rgba(10, 15, 15, 0.90);
         }
 
         body {
@@ -100,7 +100,6 @@
             border-left: 2px solid var(--holo-color);
             border-right: 2px solid var(--holo-color);
             animation: spin-rev 20s linear infinite;
-            /* Explodes further out */
             transform: translate(-50%, -50%) translateZ(calc(var(--explode) * 2px)) rotateX(45deg);
         }
 
@@ -142,23 +141,6 @@
             backface-visibility: visible; 
         }
 
-        /* Gestural States Visuals */
-        .gesture-grabbed .ring { border-color: #ffaa00; box-shadow: 0 0 30px #ffaa00; }
-        .gesture-grabbed .face { border-color: #ffaa00; background: rgba(255, 170, 0, 0.3); }
-        
-        .gesture-pinch .ring { border-style: dotted; }
-        .gesture-pinch .holo-wrapper { filter: hue-rotate(90deg); } /* Purple shift */
-        
-        .gesture-point .holo-wrapper { filter: hue-rotate(-60deg) brightness(1.5); } /* Green shift */
-        .gesture-shake .holo-wrapper { animation: glitch 0.2s infinite; }
-        .gesture-freeze .holo-wrapper * { animation-play-state: paused !important; filter: grayscale(1); }
-
-        @keyframes glitch {
-            0% { transform: skewX(10deg); }
-            50% { transform: skewX(-10deg); }
-            100% { transform: skewX(10deg); }
-        }
-
         .f-front  { transform: translateZ(40px); }
         .f-back   { transform: rotateY(180deg) translateZ(40px); }
         .f-right  { transform: rotateY(90deg) translateZ(40px); }
@@ -166,15 +148,51 @@
         .f-top    { transform: rotateX(90deg) translateZ(40px); }
         .f-bottom { transform: rotateX(-90deg) translateZ(40px); }
 
-        /* --- 3. UI LAYOUT --- */
-        #left-panel {
+        /* --- 3. UI LAYOUT & SIDEBAR --- */
+        
+        /* Hamburger Button */
+        #hamburger-btn {
             position: fixed;
             top: 20px; left: 20px;
-            width: 250px;
-            z-index: 10;
+            z-index: 100;
+            font-size: 24px;
+            color: var(--holo-color);
+            background: rgba(0,0,0,0.6);
+            border: 1px solid var(--holo-color);
+            width: 40px; height: 40px;
+            display: flex;
+            align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+        }
+        #hamburger-btn:hover {
+            background: var(--holo-color);
+            color: #000;
+        }
+
+        /* Sidebar Container */
+        #sidebar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 280px;
+            height: 100%;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--holo-color);
+            z-index: 90;
+            padding: 80px 20px 20px 20px; /* Top padding to clear hamburger */
+            box-sizing: border-box;
+            transform: translateX(-100%); /* Hidden by default */
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            backdrop-filter: blur(10px);
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        #sidebar.open {
+            transform: translateX(0);
         }
 
         #chat-panel {
@@ -184,7 +202,9 @@
             z-index: 10;
             display: flex;
             flex-direction: column;
+            pointer-events: none; /* Let clicks pass through empty areas */
         }
+        #chat-panel > * { pointer-events: auto; }
 
         #chat-history {
             flex: 1;
@@ -234,24 +254,26 @@
             background: rgba(0, 20, 20, 0.9);
             border: 1px solid var(--holo-color);
             color: var(--holo-color);
-            padding: 8px 12px;
+            padding: 10px 12px;
             text-transform: uppercase;
             font-size: 11px;
             cursor: pointer;
             letter-spacing: 1px;
             transition: all 0.2s;
-            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+            clip-path: polygon(5% 0, 100% 0, 100% 70%, 95% 100%, 0 100%, 0 30%);
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 100%; /* Full width in sidebar */
         }
         button:hover { background: var(--holo-color); color: #000; }
         button.active { background: var(--holo-color); color: #000; box-shadow: 0 0 15px var(--holo-color); }
 
-        /* Icon Buttons */
+        /* Icon Buttons for Input */
         .icon-btn {
             padding: 10px;
             min-width: 40px;
+            width: auto; /* Reset width for input buttons */
         }
         
         .mic-active {
@@ -265,11 +287,13 @@
             100% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); }
         }
 
-        /* Special Gemini Buttons */
-        #btn-scan {
-            border-color: #4db8ff; color: #4db8ff;
-        }
+        /* Special Buttons */
+        #btn-scan { border-color: #4db8ff; color: #4db8ff; }
         #btn-scan:hover { background: #4db8ff; color: #000; }
+
+        /* Neural Tool Buttons */
+        .btn-neural { border-color: #ff00ff !important; color: #ff00ff !important; }
+        .btn-neural:hover { background: #ff00ff !important; color: #000 !important; }
 
         /* Dropdown Style */
         select.hud-select {
@@ -285,11 +309,7 @@
             margin-top: 5px;
             cursor: pointer;
         }
-        select.hud-select option {
-            background: #000;
-            color: var(--holo-color);
-            padding: 5px;
-        }
+        select.hud-select option { background: #000; color: var(--holo-color); padding: 5px; }
 
         #matrix-canvas {
             position: fixed; top: 0; left: 0;
@@ -315,24 +335,6 @@
             text-shadow: 0 0 5px var(--holo-color);
         }
 
-        #config-modal {
-            position: fixed; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 320px;
-            background: rgba(10, 15, 15, 0.95);
-            border: 1px solid var(--holo-color);
-            padding: 20px;
-            z-index: 1000;
-            display: none;
-            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
-        }
-        #config-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 999; display: none;
-            backdrop-filter: blur(5px);
-        }
-        .warning-text { color: #ff3333; font-size: 10px; margin-top: 5px; }
-        
         /* Capture Canvas (Hidden) */
         #cap-canvas { display: none; }
     </style>
@@ -367,16 +369,24 @@
         </div>
     </div>
 
-    <!-- LEFT CONTROLS -->
-    <div id="left-panel">
+    <!-- HAMBURGER BUTTON -->
+    <div id="hamburger-btn">☰</div>
+
+    <!-- SIDEBAR CONTROLS -->
+    <div id="sidebar">
         <div class="hud-header">SYSTEM CONTROLS</div>
-        <button id="btn-config">⚠ SYSTEM CONFIG</button>
+        
         <button id="btn-track">INIT HAND TRACKING</button>
         <button id="btn-scan">✨ VISION SCAN (CAM)</button>
         <button id="btn-voice">TTS AUDIO: OFF</button>
         <button id="btn-security">SECURITY: OFF</button>
         <button id="btn-matrix">MATRIX: ON</button>
         
+        <div class="hud-header" style="margin-top:20px;">NEURAL TOOLS</div>
+        <button id="btn-plan" class="btn-neural">✨ TACTICAL PLAN</button>
+        <button id="btn-code" class="btn-neural">✨ CODE GENESIS</button>
+        <button id="btn-assess" class="btn-neural">✨ THREAT ASSESS</button>
+
         <!-- GESTURE REFERENCE LIST (INFO ONLY) -->
         <select id="gesture-list" class="hud-select" onchange="this.selectedIndex=0; this.blur();">
             <option value="" disabled selected>▼ VIEW GESTURE COMMANDS ▼</option>
@@ -403,7 +413,7 @@
             <option>❄ FREEZE: Stop Physics</option>
         </select>
 
-        <div style="font-size: 10px; margin-top:10px; color:#777;">
+        <div style="font-size: 10px; margin-top:auto; color:#777;">
             CORE STATUS: <span id="status-text" style="color:var(--holo-color)">ONLINE</span><br>
             GESTURE: <span id="gesture-text" style="color:#fff">NONE</span><br>
             FPS: <span id="fps-counter">60</span>
@@ -422,29 +432,41 @@
         <button id="btn-upload" class="icon-btn" title="Upload Image">📁</button>
         <input type="text" id="user-input" placeholder="Type or use voice..." autocomplete="off">
         <button id="btn-mic" class="icon-btn" title="Voice Command">🎤</button>
-        <button id="btn-send">SEND</button>
-    </div>
-
-    <!-- CONFIG MODAL -->
-    <div id="config-overlay"></div>
-    <div id="config-modal">
-        <div class="hud-header">SECURITY PROTOCOLS</div>
-        <div style="font-size:11px; margin-bottom:15px; color:#aaa;">AUTHENTICATION REQUIRED FOR NEURAL LINK</div>
-        <input type="password" id="api-key-input" placeholder="ENTER OPENROUTER KEY (sk-or-v1...)" style="width:100%; box-sizing:border-box; margin-bottom:10px; background:#000; color:#fff; border:1px solid #333; padding:8px;">
-        <div class="warning-text" id="auth-warning">Authorization Failed. Check Key.</div>
-        <div style="display:flex; gap:10px; margin-top:20px;">
-            <button id="btn-save-key" style="flex:1;">AUTHENTICATE</button>
-            <button id="btn-close-key" style="flex:1; background:transparent; border-color:#555; color:#555;">CANCEL</button>
-        </div>
+        <button id="btn-send" style="width:auto;">SEND</button>
     </div>
 
     <script>
-        // GLOBAL API KEY (Empty by default)
-        const DEFAULT_KEY = ""; 
+        // --- 1. API KEY CONFIGURATION (Vercel / Build Environment) ---
+        // IMPORTANT: Since this is a client-side HTML file, Vercel Env variables (like process.env) 
+        // are NOT available at browser runtime unless injected during build or simple string replacement.
+        // We assume the key is present below.
         
-        // Initialize Key: Check storage first
-        let currentApiKey = localStorage.getItem('jarvis_api_key') || DEFAULT_KEY;
-        let pendingCommand = null; // Store message if auth is needed
+        // If you are using a build script to replace this string, ensure it matches:
+        const API_KEY = "sk-or-v1-YOUR-OPENROUTER-KEY-HERE"; 
+
+        /**
+         * ------------------------------------------------------------------
+         * SIDEBAR UI LOGIC
+         * ------------------------------------------------------------------
+         */
+        const hamburgerBtn = document.getElementById('hamburger-btn');
+        const sidebar = document.getElementById('sidebar');
+
+        hamburgerBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent click from bubbling to document
+            sidebar.classList.toggle('open');
+            hamburgerBtn.innerHTML = sidebar.classList.contains('open') ? '×' : '☰';
+        });
+
+        // Close sidebar when clicking outside
+        document.addEventListener('click', (e) => {
+            if (sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                e.target !== hamburgerBtn) {
+                sidebar.classList.remove('open');
+                hamburgerBtn.innerHTML = '☰';
+            }
+        });
 
         /**
          * ------------------------------------------------------------------
@@ -469,11 +491,12 @@
             { "action": "SCAN_UI", "value": "TRUE" }
             `,
 
-            async sendText(text) {
+            async sendText(text, systemOverride = null) {
+                const sysMsg = systemOverride || this.systemInstruction;
                 return this.tryFetch({
                     messages: [
-                        { role: "system", content: this.systemInstruction },
-                        { role: "user", content: text + "\n\n(Remember to append JSON command if applicable)" }
+                        { role: "system", content: sysMsg },
+                        { role: "user", content: text }
                     ]
                 });
             },
@@ -499,11 +522,7 @@
                     throw new Error("All neural pathways unavailable.");
                 }
 
-                if (!currentApiKey) {
-                    showConfigModal("API Key Required.");
-                    throw new Error("API Key Missing.");
-                }
-
+                // Removed manual key check. Assume API_KEY is valid or injected.
                 const currentModel = this.models[modelIndex];
                 const payload = { ...payloadBase, model: currentModel };
 
@@ -511,7 +530,7 @@
                     const response = await fetch(this.endpoint, {
                         method: 'POST',
                         headers: { 
-                            'Authorization': `Bearer ${currentApiKey}`,
+                            'Authorization': `Bearer ${API_KEY}`,
                             'Content-Type': 'application/json',
                             'HTTP-Referer': 'https://jarvis-ui.com', 
                             'X-Title': 'Jarvis AI'
@@ -520,10 +539,8 @@
                     });
                     
                     if (!response.ok) {
-                        // AUTH ERROR (401)
                         if (response.status === 401) {
-                            showConfigModal("Access Denied (401). Invalid Key."); 
-                            throw new Error("ACCESS DENIED (401).");
+                            throw new Error("ACCESS DENIED (401). Check Env Var Key.");
                         }
 
                         // Rate Limit (429) -> Switch Model
@@ -561,78 +578,28 @@
             }
         };
 
-        // --- KEY MANAGEMENT UI LOGIC ---
-        const configModal = document.getElementById('config-modal');
-        const configOverlay = document.getElementById('config-overlay');
-        const apiKeyInput = document.getElementById('api-key-input');
-        const authWarning = document.getElementById('auth-warning');
-
-        function showConfigModal(msg = "Authorization Required.") {
-            configModal.style.display = 'block';
-            configOverlay.style.display = 'block';
-            authWarning.innerText = msg;
-            apiKeyInput.value = currentApiKey;
-            apiKeyInput.focus();
-        }
-
-        document.getElementById('btn-config').addEventListener('click', () => showConfigModal());
-        document.getElementById('btn-close-key').addEventListener('click', () => {
-            configModal.style.display = 'none';
-            configOverlay.style.display = 'none';
-        });
-
-        document.getElementById('btn-save-key').addEventListener('click', () => {
-            const newKey = apiKeyInput.value.trim();
-            if(newKey) {
-                if(!newKey.startsWith('sk-or-v1')) {
-                    authWarning.innerText = "Invalid Format. Must start with 'sk-or-v1'.";
-                    return;
-                }
-                currentApiKey = newKey;
-                localStorage.setItem('jarvis_api_key', newKey);
-                configModal.style.display = 'none';
-                configOverlay.style.display = 'none';
-                addMessage('AI', 'Identity confirmed. Neural Link established.');
-                
-                // AUTO RESUME CHAT
-                if(pendingCommand) {
-                    userInput.value = pendingCommand;
-                    handleSend();
-                    pendingCommand = null;
-                }
-            }
-        });
-
         // --- CHAT LOGIC ---
-        async function handleSend() {
-            const text = userInput.value.trim();
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('btn-send');
+        const chatHistory = document.getElementById('chat-history');
+
+        async function handleSend(customText = null, systemOverride = null) {
+            const text = customText || userInput.value.trim();
             if (!text) return;
             
-            if (!currentApiKey) {
-                pendingCommand = text;
-                addMessage('AI', '⚠ AUTHENTICATION REQUIRED. Access restricted.');
-                showConfigModal();
-                return;
-            }
-
             addMessage('USER', text);
-            userInput.value = '';
+            if (!customText) userInput.value = '';
             
             if(!isSecurityMode) HoloCore.setMode('THINKING');
             sendBtn.disabled = true;
             
             try {
-                const rawResponse = await GeminiCore.sendText(text);
+                const rawResponse = await GeminiCore.sendText(text, systemOverride);
                 const finalResponse = GeminiCore.executeCommands(rawResponse);
                 addMessage('AI', finalResponse);
                 speakResponse(finalResponse);
             } catch (err) {
-                if(err.message.includes('401')) {
-                     pendingCommand = text; // Save for retry
-                     addMessage('AI', '⚠ KEY REVOKED. Please update configuration.');
-                } else {
-                     addMessage('AI', `Server Error: ${err.message}`);
-                }
+                addMessage('AI', `System Error: ${err.message}`);
             }
             
             if(!isSecurityMode && HoloCore.state.mode === 'THINKING') HoloCore.setMode('IDLE');
@@ -640,7 +607,55 @@
             userInput.focus();
         }
 
-        // --- NEW: VOICE COMMANDS (Web Speech API) ---
+        // --- NEURAL TOOLS LOGIC ---
+        document.getElementById('btn-plan').addEventListener('click', () => {
+            const goal = userInput.value.trim() || "Analyze Current Situation";
+            const sys = "You are a Tactical AI. Break down the user's input into a strictly numbered, step-by-step mission plan. Be brief, military-style, and actionable.";
+            handleSend(goal, sys);
+        });
+
+        document.getElementById('btn-code').addEventListener('click', () => {
+            const req = userInput.value.trim() || "Generate Hello World";
+            const sys = "You are a Coding AI. Provide ONLY the code snippet for the user's request. No explanations. Wrap in markdown code blocks.";
+            handleSend(req, sys);
+        });
+
+        document.getElementById('btn-assess').addEventListener('click', async () => {
+            const input = userInput.value.trim();
+            if (!input) {
+                addMessage('SYS', 'Input required for Threat Assessment.');
+                return;
+            }
+            
+            addMessage('SYS', 'Analyzing Emotional Signature...');
+            HoloCore.setMode('THINKING');
+            
+            // Special direct call to parse result for UI change
+            try {
+                const sys = "Analyze the sentiment of the user input. Return JSON ONLY: { \"sentiment\": \"positive|neutral|negative\", \"threat_level\": \"low|medium|high\" }";
+                const response = await GeminiCore.sendText(input, sys);
+                
+                // cleanup code block if present
+                const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
+                const data = JSON.parse(cleanJson);
+                
+                addMessage('AI', `THREAT LEVEL: ${data.threat_level.toUpperCase()} // SENTIMENT: ${data.sentiment.toUpperCase()}`);
+                
+                if (data.threat_level === 'high' || data.sentiment === 'negative') {
+                    HoloCore.setMode('ALERT');
+                } else if (data.threat_level === 'medium') {
+                    HoloCore.updateTheme(60, 100, 50); // Yellow
+                } else {
+                    HoloCore.setMode('IDLE'); // Back to cyan
+                }
+            } catch (e) {
+                addMessage('AI', 'Assessment Failed. Assuming Neutral.');
+                HoloCore.setMode('IDLE');
+            }
+        });
+
+
+        // --- VOICE COMMANDS (Web Speech API) ---
         const micBtn = document.getElementById('btn-mic');
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
@@ -675,10 +690,9 @@
             });
         } else {
             micBtn.style.display = 'none';
-            console.log("Web Speech API not supported.");
         }
 
-        // --- NEW: FILE UPLOAD LOGIC ---
+        // --- FILE UPLOAD LOGIC ---
         const uploadBtn = document.getElementById('btn-upload');
         const fileInput = document.getElementById('file-input');
 
@@ -688,7 +702,6 @@
             const file = e.target.files[0];
             if (!file) return;
 
-            // Reset input so same file can be selected again
             e.target.value = '';
 
             addMessage('SYS', `Analyzing file: ${file.name}...`);
@@ -697,9 +710,6 @@
             const reader = new FileReader();
             reader.onload = async (event) => {
                 const base64Raw = event.target.result; 
-                // Strip metadata prefix for Gemini if needed, but our GeminiCore usage handles full data URI?
-                // Actually openrouter/gemini usually expects just base64 data or url.
-                // Let's strip the "data:image/jpeg;base64," part.
                 const base64Data = base64Raw.split(',')[1];
 
                 try {
@@ -718,11 +728,10 @@
         /**
          * ------------------------------------------------------------------
          * J.A.R.V.I.S. GESTURE ENGINE
-         * Logic to classify complex states from basic inputs
          * ------------------------------------------------------------------
          */
         const GestureEngine = {
-            history: [], // For shake detection
+            history: [], 
             lastX: 0, lastY: 0, lastAngle: 0,
             
             detect: function(x, y, scale, label, numHands) {
@@ -793,7 +802,6 @@
         /**
          * ------------------------------------------------------------------
          * J.A.R.V.I.S. HOLOCORE
-         * High-Performance Physics & Animation Engine
          * ------------------------------------------------------------------
          */
         const HoloCore = {
@@ -913,8 +921,6 @@
                     if (s.gesture === 'GRAB_CENTER') this.ui.root.style.setProperty('--base-h', 30);
                     else if (s.gesture === 'POINT_CENTER') this.ui.root.style.setProperty('--base-h', 120);
                     else if (s.gesture === 'PINCH_CENTER') this.ui.root.style.setProperty('--base-h', 280);
-                    else if (s.gesture === 'SHAKE') {}
-                    else if (s.gesture === 'WAVE') {}
                     else if (s.velocity > 5) {
                         const shift = Math.min(s.velocity * 3, 60);
                         this.ui.root.style.setProperty('--base-h', this.config.baseHue + shift);
@@ -941,11 +947,7 @@
             }
         };
 
-        /**
-         * ------------------------------------------------------------------
-         * HAND TRACKING (Input System)
-         * ------------------------------------------------------------------
-         */
+        // --- HAND TRACKING ---
         const video = document.getElementById('video');
         const trackBtn = document.getElementById('btn-track');
         let isTracking = false;
@@ -1017,36 +1019,12 @@
             requestAnimationFrame(detectLoop);
         }
 
-        /**
-         * ------------------------------------------------------------------
-         * CHAT & LOGIC SYSTEM (Gemini Integrated)
-         * ------------------------------------------------------------------
-         */
-        const chatHistory = document.getElementById('chat-history');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('btn-send');
-        const securityBtn = document.getElementById('btn-security');
-        let isSecurityMode = false;
-
-        // --- VOICE TOGGLE ---
-        let isVoiceEnabled = false;
-        document.getElementById('btn-voice').addEventListener('click', (e) => {
-            isVoiceEnabled = !isVoiceEnabled;
-            e.target.innerText = isVoiceEnabled ? "TTS AUDIO: ON" : "TTS AUDIO: OFF";
-            e.target.classList.toggle('active');
-        });
-
         // --- GEMINI VISION SCAN ---
         const scanBtn = document.getElementById('btn-scan');
         const capCanvas = document.getElementById('cap-canvas');
         const capCtx = capCanvas.getContext('2d');
 
         scanBtn.addEventListener('click', async () => {
-            if (!currentApiKey) {
-                addMessage('AI', '⚠ AUTH ERROR. Please configure API Key.');
-                return;
-            }
-            
             addMessage('USER', '[INITIATING VISUAL SCAN...]');
             HoloCore.setMode('THINKING');
             
@@ -1075,6 +1053,8 @@
         });
 
         // Security Toggle
+        const securityBtn = document.getElementById('btn-security');
+        let isSecurityMode = false;
         securityBtn.addEventListener('click', () => {
             isSecurityMode = !isSecurityMode;
             if (isSecurityMode) {
@@ -1088,6 +1068,14 @@
                 securityBtn.classList.remove('active');
                 addMessage('AI', 'Security protocols deactivated.');
             }
+        });
+
+        // --- VOICE TOGGLE ---
+        let isVoiceEnabled = false;
+        document.getElementById('btn-voice').addEventListener('click', (e) => {
+            isVoiceEnabled = !isVoiceEnabled;
+            e.target.innerText = isVoiceEnabled ? "TTS AUDIO: ON" : "TTS AUDIO: OFF";
+            e.target.classList.toggle('active');
         });
 
         function speakResponse(text) {
@@ -1107,13 +1095,9 @@
         }
 
         userInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
-        sendBtn.addEventListener('click', handleSend);
+        sendBtn.addEventListener('click', () => handleSend());
 
-        /**
-         * ------------------------------------------------------------------
-         * MATRIX BACKGROUND (Optimized)
-         * ------------------------------------------------------------------
-         */
+        // --- MATRIX BACKGROUND ---
         const matrixCanvas = document.getElementById('matrix-canvas');
         const ctx = matrixCanvas.getContext('2d');
         let matrixEnabled = true;
@@ -1156,11 +1140,7 @@
             }
         }
 
-        /**
-         * ------------------------------------------------------------------
-         * MAIN LOOP
-         * ------------------------------------------------------------------
-         */
+        // --- MAIN LOOP ---
         let lastTime = 0;
         function loop(timestamp) {
             if (!lastTime) lastTime = timestamp;
